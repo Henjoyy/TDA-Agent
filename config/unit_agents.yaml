@@ -1,0 +1,81 @@
+agents:
+  - id: retrieval_agent
+    name: "Retrieval Agent"
+    name_ko: "검색/조회 에이전트"
+    description: "단순 데이터 조회, 검색, 필터링 작업을 처리합니다."
+    capabilities:
+      - data_query
+      - search
+      - lookup
+      - filter
+    feature_bounds:
+      reasoning_depth: [0.0, 0.35]
+      data_type: [0.4, 1.0]
+      risk_level: [0.0, 0.5]
+
+  - id: analysis_agent
+    name: "Analysis Agent"
+    name_ko: "분석 에이전트"
+    description: "통계 분석, 데이터 집계, 트렌드 파악 등 정량적 분석을 수행합니다."
+    capabilities:
+      - statistics
+      - aggregation
+      - trend_analysis
+      - comparison
+    feature_bounds:
+      reasoning_depth: [0.3, 0.7]
+      data_type: [0.6, 1.0]
+      complexity: [0.3, 0.7]
+
+  - id: reasoning_agent
+    name: "Reasoning Agent"
+    name_ko: "추론 에이전트"
+    description: "복합 추론, 의사결정 지원, 예측, 추천 등 고차원 인지 작업을 수행합니다."
+    capabilities:
+      - inference
+      - recommendation
+      - prediction
+      - decision_support
+    feature_bounds:
+      reasoning_depth: [0.65, 1.0]
+      complexity: [0.5, 1.0]
+
+  - id: generation_agent
+    name: "Generation Agent"
+    name_ko: "생성 에이전트"
+    description: "보고서, 요약, 콘텐츠 등 텍스트 기반 결과물을 생성합니다."
+    capabilities:
+      - text_generation
+      - report_writing
+      - summarization
+      - translation
+    feature_bounds:
+      data_type: [0.0, 0.5]
+      reasoning_depth: [0.2, 0.7]
+      autonomy: [0.3, 0.8]
+
+  - id: action_agent
+    name: "Action Agent"
+    name_ko: "실행 에이전트"
+    description: "외부 시스템 API 호출, 알림 발송, 워크플로우 트리거 등 실제 행동을 수행합니다."
+    capabilities:
+      - api_call
+      - notification
+      - workflow_trigger
+      - data_write
+    feature_bounds:
+      autonomy: [0.6, 1.0]
+      risk_level: [0.4, 1.0]
+
+  - id: orchestrator_agent
+    name: "Orchestrator Agent"
+    name_ko: "조율 에이전트"
+    description: "여러 에이전트를 조율하고 복잡한 멀티스텝 워크플로우를 관리합니다."
+    capabilities:
+      - routing
+      - coordination
+      - error_handling
+      - state_management
+    feature_bounds:
+      complexity: [0.7, 1.0]
+      reasoning_depth: [0.5, 1.0]

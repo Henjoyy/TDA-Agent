@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TAD-Mapper | AI 에이전트 자동 설계 시스템</title>
+  <meta name="description" content="사용자 여정(User Journey)을 분석하여 Unit Agent와 MCP Tool을 자동으로 설계하는 AI 시스템" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+    rel="stylesheet" />
+  <link rel="stylesheet" href="/web/index.css" />
+</head>
+
+<body>
+  <!-- Header -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-icon">⬡</span>
+        <span class="logo-text">TAD-Mapper</span>
+        <span class="logo-badge">Beta</span>
+      </div>
+      <nav class="header-nav">
+        <a href="#upload" class="nav-link">분석 시작</a>
+        <a href="#results" class="nav-link">결과</a>
+        <a href="https://github.com/Henjoyy/TDA-Agent" class="nav-link" target="_blank">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-bg"></div>
+    <div class="container">
+      <div class="hero-content">
+        <div class="hero-tag">위상수학적 데이터 분석 (TDA) 기반</div>
+        <h1 class="hero-title">
+          AI 적용 기회를<br />
+          <span class="gradient-text">Unit Agent</span>로 자동 변환
+        </h1>
+        <p class="hero-desc">
+          사용자 여정(User Journey)을 업로드하면 Gemini AI가 위상학적 클러스터링으로<br />
+          최적의 Agent 구성과 MCP Tool 스키마를 자동으로 설계합니다.
+        </p>
+        <div class="hero-stats">
+          <div class="stat"><span class="stat-num">6D</span><span class="stat-label">특징 벡터</span></div>
+          <div class="stat-divider"></div>
+          <div class="stat"><span class="stat-num">TDA</span><span class="stat-label">Mapper 알고리즘</span></div>
+          <div class="stat-divider"></div>
+          <div class="stat"><span class="stat-num">MCP</span><span class="stat-label">Tool 자동 생성</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Upload Section -->
+  <section class="section" id="upload">
+    <div class="container">
+      <div class="section-header">
+        <h2 class="section-title">분석 시작</h2>
+        <p class="section-desc">User Journey JSON 또는 CSV 파일을 업로드하세요</p>
+      </div>
+
+      <div class="upload-area" id="uploadArea">
+        <div class="upload-icon">📂</div>
+        <p class="upload-text">파일을 드래그하거나 클릭하여 업로드</p>
+        <p class="upload-hint">지원 형식: JSON, CSV</p>
+        <input type="file" id="fileInput" accept=".json,.csv" hidden />
+        <button class="btn btn-outline" onclick="document.getElementById('fileInput').click()">파일 선택</button>
+      </div>
+
+      <div class="upload-options">
+        <label class="option-label">
+          Agent 수 (비워두면 자동 결정)
+          <input type="number" id="nAgents" class="option-input" min="2" max="10" placeholder="자동" />
+        </label>
+        <button class="btn btn-primary" id="analyzeBtn" onclick="runAnalysis()" disabled>
+          <span class="btn-icon">⚡</span> 분석 실행
+        </button>
+        <button class="btn btn-ghost" onclick="loadSample()">샘플 데이터 사용</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Loading -->
+  <div class="loading-overlay" id="loadingOverlay" style="display:none">
+    <div class="loading-card">
+      <div class="spinner"></div>
+      <p class="loading-title">분석 중...</p>
+      <p class="loading-step" id="loadingStep">Gemini AI가 특징 벡터를 추출하고 있습니다</p>
+      <div class="loading-steps">
+        <div class="step-item" id="step1">① 특징 추출 (LLM)</div>
+        <div class="step-item" id="step2">② TDA Mapper 분석</div>
+        <div class="step-item" id="step3">③ Agent 자동 발견</div>
+        <div class="step-item" id="step4">④ MCP Tool 생성</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <section class="section" id="results" style="display:none">
+    <div class="container">
+      <!-- Summary Cards -->
+      <div class="summary-grid" id="summaryGrid"></div>
+
+      <!-- Tabs -->
+      <div class="tabs">
+        <button class="tab active" onclick="switchTab('agents', this)">🤖 Agent 구성</button>
+        <button class="tab" onclick="switchTab('tools', this)">🔧 MCP Tools</button>
+        <button class="tab" onclick="switchTab('warnings', this)">⚠️ 경고</button>
+        <button class="tab" onclick="switchTab('coverage', this)">🗺️ 커버리지</button>
+        <button class="tab" onclick="switchTab('router', this)">🧭 쿼리 라우팅</button>
+        <button class="tab" onclick="switchTab('viz', this)">📊 시각화</button>
+      </div>
+
+      <!-- Agents Tab -->
+      <div class="tab-content active" id="tab-agents">
+        <div class="agents-grid" id="agentsGrid"></div>
+      </div>
+
+      <!-- Tools Tab -->
+      <div class="tab-content" id="tab-tools">
+        <div class="tools-list" id="toolsList"></div>
+      </div>
+
+      <!-- Warnings Tab -->
+      <div class="tab-content" id="tab-warnings">
+        <div id="warningsList"></div>
+      </div>
+
+      <!-- Coverage Tab (수학적 정식화 #1: Q ⊆ ∪Ui) -->
+      <div class="tab-content" id="tab-coverage">
+        <div class="math-banner">
+          <span class="math-formula">Q ⊆ ∪ U<sub>i</sub></span>
+          <span class="math-desc">사용자 쿼리 매니폴드가 Unit Agent들의 열린 피복으로 완전히 덮여야 합니다</span>
+        </div>
+        <div id="coveragePanel"></div>
+        <div class="viz-card" style="margin-top:16px" id="manifoldVizCard" style="display:none">
+          <h3 class="viz-title">Query Manifold 시각화</h3>
+          <iframe id="manifoldFrame" class="viz-frame" src="about:blank"></iframe>
+        </div>
+      </div>
+
+      <!-- Router Tab (수학적 정식화 #2: Φ(x) = Uk) -->
+      <div class="tab-content" id="tab-router">
+        <div class="math-banner">
+          <span class="math-formula">Φ(x) = U<sub>k</sub> ⟺ [x] = [x<sub>k</sub>]</span>
+          <span class="math-desc">표현이 달라도 같은 의도의 쿼리는 동일한 Agent로 라우팅됩니다</span>
+        </div>
+        <div class="router-panel">
+          <div class="router-input-row">
+            <input type="text" id="queryInput" class="router-input" placeholder="예) 수출 통계 조회해줘 / 무역 데이터 검색해 / 관세 정보 알려줘"
+              onkeydown="if(event.key==='Enter') routeQuery()" />
+            <button class="btn btn-primary" onclick="routeQuery()">
+              <span class="btn-icon">🧭</span> 라우팅
+            </button>
+          </div>
+          <div id="routingResult" class="routing-result" style="display:none"></div>
+
+          <!-- 합성 계획 (수학적 정식화 #3) -->
+          <div id="compositionPanel" style="display:none">
+            <div class="math-banner" style="margin-top:16px">
+              <span class="math-formula">y = (t<sub>π(m)</sub> ∘ ··· ∘ t<sub>π(1)</sub>)(x)</span>
+              <span class="math-desc">Agent가 MCP Tool을 동적으로 합성하여 쿼리를 처리합니다</span>
+            </div>
+            <div id="compositionResult"></div>
+            <div class="viz-card" id="compositionVizCard" style="display:none; margin-top:12px">
+              <h3 class="viz-title">Tool 합성 흐름도</h3>
+              <div id="compositionFlowViz"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Viz Tab -->
+      <div class="tab-content" id="tab-viz">
+        <div class="viz-grid">
+          <div class="viz-card">
+            <h3 class="viz-title">Mapper 위상 그래프</h3>
+            <iframe id="mapperFrame" class="viz-frame" src="about:blank"></iframe>
+          </div>
+          <div class="viz-card">
+            <h3 class="viz-title">Agent 특징 프로파일</h3>
+            <iframe id="radarFrame" class="viz-frame" src="about:blank"></iframe>
+          </div>
+        </div>
+      </div>
+
+      <!-- Download -->
+      <div class="download-bar" id="downloadBar"></div>
+    </div>
+  </section>
+
+  <!-- How it works -->
+  <section class="section section-dark">
+    <div class="container">
+      <div class="section-header">
+        <h2 class="section-title">작동 원리</h2>
+      </div>
+      <div class="pipeline-steps">
+        <div class="pipeline-step">
+          <div class="step-num">1</div>
+          <div class="step-body">
+            <h3>특징 추출</h3>
+            <p>Gemini LLM이 각 AI 적용 기회를 6차원 위상학적 벡터로 변환합니다</p>
+          </div>
+        </div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-step">
+          <div class="step-num">2</div>
+          <div class="step-body">
+            <h3>TDA Mapper</h3>
+            <p>위상수학적 Mapper 알고리즘으로 태스크 간 구조적 관계를 분석합니다</p>
+          </div>
+        </div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-step">
+          <div class="step-num">3</div>
+          <div class="step-body">
+            <h3>Agent 발견</h3>
+            <p>KMeans 클러스터링으로 유사한 태스크를 묶어 Agent를 자동 정의합니다</p>
+          </div>
+        </div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-step">
+          <div class="step-num">4</div>
+          <div class="step-body">
+            <h3>MCP Tool 생성</h3>
+            <p>각 태스크에 필요한 MCP Tool JSON 스키마를 자동으로 생성합니다</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="footer">
+    <p>TAD-Mapper v0.2.0 · Powered by Gemini AI · TDA + 수학적 정식화 (Q ⊆ ∪Ui, Φ, ∘)</p>
+  </footer>
+
+  <script src="/web/index.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(\"/Users/hahyeonjong/TAD-Agent Mapping/web/index.css\":*)",
+      "Bash(python -m pytest:*)"
+    ]
+  }
+}
