@@ -2,7 +2,7 @@
 
 **AI 적용 기회(User Journey)를 입력하면 위상수학적 알고리즘으로 Unit Agent와 MCP Tool을 자동 설계하는 시스템**
 
-> **v0.2.0** — 수학적 정식화 기반 고도화: Query Manifold, Homotopy Router, Tool Composition Engine
+> **v0.2.2** — 안정화 리팩토링: 커버리지 계산 정확도 개선, Tool 합성 정렬 수정, Agent ID 안정화, 세션 TTL/LRU 관리
 
 ---
 
@@ -76,9 +76,9 @@ User Journey (JSON/CSV)
         ↓
 [2]  TDA Mapper            ← scikit-learn Mapper 알고리즘
         ↓
-[3]  Agent Discovery       ← KMeans + 엘보우 방법 (자동 클러스터 수)
+[3]  Agent Discovery       ← HDBSCAN (자동 클러스터 수 결정, 비구형 클러스터)
         ↓
-[4]  Agent Naming          ← Gemini LLM → 이름/역할/역량 자동 부여
+[4]  Agent Naming          ← Gemini 3.0 Flash + Skills 가이드라인 → 이름/역할 자동 부여
         ↓
 [5]  Hole Detection        ← 논리적 구멍 & 중복 탐지
         ↓
@@ -90,7 +90,7 @@ User Journey (JSON/CSV)
         ↓
 [9]  Task Embeddings ★     ← Gemini text-embedding-004 (768D)
         ↓
-[10] Query Manifold ★      ← Q ⊆ ∪Ui 커버리지 분석 (Voronoi)
+[10] Query Manifold ★      ← Q ⊆ ∪Ui 커버리지 분석 (임베딩 반경 기반 + Voronoi 면적 근사)
         ↓
 [11] Homotopy Router ★     ← Φ 라우터 초기화 (코사인 유사도 기반)
 
@@ -103,12 +103,27 @@ User Journey (JSON/CSV)
 
 ### Query Manifold & 커버리지 분석
 
-태스크 임베딩을 PCA로 2D 투영하고, Voronoi tessellation으로 각 Agent의 커버리지 영역을 측정합니다.
+태스크 임베딩을 기반으로 각 Agent의 커버리지 반경을 계산하고, 태스크 단위 커버/중첩/갭을 측정합니다.
 
-- `coverage_ratio` : 전체 쿼리 공간 대비 Agent가 커버하는 비율
-- `overlap_ratio`  : Agent 간 중첩 비율
-- `gap_ratio`      : 미커버 영역 비율
+- `coverage_ratio` : 하나 이상의 Agent 영역에 포함된 태스크 비율
+- `overlap_ratio`  : 두 개 이상 Agent 영역에 동시에 포함된 태스크 비율
+- `gap_ratio`      : 어떤 Agent 영역에도 포함되지 않은 태스크 비율
 - `coverage_complete` : Q ⊆ ∪Ui 조건 충족 여부
+
+### 안정화 리팩토링 (v0.2.2)
+
+- **Query Manifold 정확도 개선**: 커버리지/갭 계산을 임베딩 반경 기반으로 통일하고, uncovered task 검출 버그를 수정했습니다.
+- **Tool 합성 정렬 수정**: 의존성 그래프의 방향성과 위상 정렬 진입차수 계산을 바로잡아 실행 순서 안정성을 개선했습니다.
+- **Agent ID 안정화**: LLM 명명 단계에서 내부 `agent_id`를 변경하지 않도록 수정하고, `tool_prefix`를 별도 필드로 분리했습니다.
+- **임베딩 실패 fallback 개선**: 랜덤 벡터 대신 텍스트 해시 기반 결정적 벡터를 사용해 재현성을 확보했습니다.
+- **API 세션 관리 개선**: `/api/analyze` 결과 세션에 TTL(1시간) + LRU(최대 32개) 정책을 적용했습니다.
+
+### HDBSCAN 기반 Agent 발견 (v0.2.1)
+
+기존 KMeans의 한계(구형 클러스터, k 지정 필요)를 극복하기 위해 HDBSCAN을 도입했습니다.
+- **자동 클러스터 수 결정**: 데이터 밀도에 따라 최적의 Agent 수($|Agents|$)를 자동으로 찾습니다.
+- **노이즈 처리**: 어떤 Agent에도 속하지 않는 이상치(Task)를 식별하고, 가장 가까운 Agent에 재배정합니다.
+- **God Agent 방지**: 태스크가 너무 많은 Agent는 자동으로 분할(`refine_clusters`)하여 부하를 분산합니다.
 
 ### 호모토피 라우팅 (실시간 쿼리 라우팅)
 
@@ -168,6 +183,10 @@ pipeline = TADMapperPipeline(max_tools_per_agent=5)  # 임계값 조정
 | `GET`  | `/api/sample` | 샘플 Journey 파일 |
 | `GET`  | `/api/health` | 상태 확인 |
 
+세션 정책:
+- 분석 세션은 마지막 접근 시점 기준 1시간 유지됩니다.
+- 서버는 최대 32개 세션만 유지하며, 초과 시 오래된 세션부터 제거됩니다.
+
 ### 라우팅 예시
 
 ```bash
@@ -198,9 +217,9 @@ TAD-Agent Mapping/
 │   │   ├── feature_extractor.py   # 6D 위상 특징 벡터 추출 (Gemini)
 │   │   ├── tda_analyzer.py        # Mapper 알고리즘 + KMeans 클러스터링
 │   │   ├── embedder.py            # 텍스트 임베딩 (768D) ★확장
-│   │   ├── query_manifold.py      # Query Manifold Q ⊆ ∪Ui ★신규
+│   │   ├── query_manifold.py      # Query Manifold Q ⊆ ∪Ui (커버리지 계산 안정화)
 │   │   ├── homotopy_router.py     # 호모토피 라우팅 함수 Φ ★신규
-│   │   ├── tool_composer.py       # MCP Tool 합성 엔진 ★신규
+│   │   ├── tool_composer.py       # MCP Tool 합성 엔진 (위상 정렬 안정화)
 │   │   ├── tool_balancer.py       # Agile Tool 균형 분배 ★신규
 │   │   └── visualizer.py          # Plotly 시각화 ★확장
 │   ├── mapper/
@@ -224,9 +243,13 @@ TAD-Agent Mapping/
 │   ├── index.js                   # 클라이언트 로직 ★확장
 │   └── index.css                  # 스타일 ★확장
 ├── tests/
-│   ├── test_tool_balancer.py      # ToolBalancer 테스트 (16개) ★신규
-│   ├── test_homotopy_router.py    # HomotopyRouter 테스트 (12개) ★신규
-│   └── test_query_manifold.py     # QueryManifold 테스트 (7개) ★신규
+│   ├── test_tool_balancer.py      # ToolBalancer 테스트
+│   ├── test_homotopy_router.py    # HomotopyRouter 테스트
+│   ├── test_query_manifold.py     # QueryManifold 테스트
+│   ├── test_tool_composer.py      # ToolComposer 정렬/그래프 테스트 ★신규
+│   ├── test_agent_namer.py        # AgentNamer ID 안정성 테스트 ★신규
+│   ├── test_embedder.py           # Embedder fallback 재현성 테스트 ★신규
+│   └── test_api_sessions.py       # API 세션 TTL/LRU 테스트 ★신규
 ├── config/
 │   ├── settings.py                # 전역 설정
 │   └── unit_agents.yaml           # Agent 템플릿
@@ -284,8 +307,8 @@ task_001,태스크명,설명,user,입력1;입력2,출력1,,태그1;태그2
 
 | 변수 | 기본값 | 설명 |
 |------|--------|------|
-| `GEMINI_API_KEY` | **필수** | Gemini API 키 |
-| `GEMINI_MODEL` | `gemini-2.0-flash` | LLM 모델 |
+| `GEMINI_API_KEY` | **필수** | Gemini API 키 (.gitignore 처리 필수) |
+| `GEMINI_MODEL` | `gemini-3-flash-preview` | LLM 모델 (Gemini 3.0 Flash) |
 | `EMBEDDING_MODEL` | `models/text-embedding-004` | 임베딩 모델 (768D) |
 | `TDA_N_INTERVALS` | `10` | Mapper 구간 수 |
 | `TDA_OVERLAP_FRAC` | `0.3` | 구간 오버랩 비율 |
@@ -306,4 +329,4 @@ task_001,태스크명,설명,user,입력1;입력2,출력1,,태그1;태그2
 
 ---
 
-*TAD-Mapper v0.2.0 · Powered by Gemini AI · TDA (Topological Data Analysis) + 수학적 정식화*
+*TAD-Mapper v0.2.2 · Powered by Gemini 3.0 · TDA (Topological Data Analysis) + 수학적 정식화*

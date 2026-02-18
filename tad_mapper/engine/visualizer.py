@@ -46,13 +46,6 @@ class TDAVisualizer:
         # 노드 위치: PCA 2D 투영 기반
         node_positions: dict[int, tuple[float, float]] = {}
         for node in graph.nodes:
-            # 노드 내 태스크들의 평균 2D 위치
-            task_ids_set = set(node.task_ids)
-            all_task_ids = []
-            for feat_idx, (tid) in enumerate(
-                [f for f in range(graph.feature_matrix.shape[0])]
-            ):
-                pass
             # 간단히 centroid 기반 위치 사용
             x = float(node.centroid[0]) if len(node.centroid) > 0 else 0.0
             y = float(node.centroid[1]) if len(node.centroid) > 1 else 0.0

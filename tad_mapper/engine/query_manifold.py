@@ -12,7 +12,7 @@ import logging
 
 import numpy as np
 from sklearn.decomposition import PCA
-from scipy.spatial import ConvexHull, Voronoi
+from scipy.spatial import Voronoi
 
 from tad_mapper.engine.embedder import Embedder
 from tad_mapper.engine.tda_analyzer import DiscoveredAgent
@@ -32,6 +32,8 @@ class QueryManifold:
     def __init__(self) -> None:
         self._regions: list[CoverageRegion] = []
         self._task_embeddings: np.ndarray | None = None        # shape [n_tasks, 768]
+        self._task_ids: list[str] = []                         # feature/task order 기준
+        self._task_index_by_id: dict[str, int] = {}
         self._projected_2d: np.ndarray | None = None           # shape [n_tasks, 2]
         self._agent_centroids_2d: np.ndarray | None = None     # shape [n_agents, 2]
         self._pca: PCA | None = None
@@ -57,6 +59,9 @@ class QueryManifold:
             task_embeddings: 미리 계산된 태스크 임베딩 (없으면 features 기반으로 대체)
         """
         logger.info("Query Manifold 구축 시작...")
+        self._coverage_metrics = None
+        self._task_ids = [f.task_id for f in features]
+        self._task_index_by_id = {tid: i for i, tid in enumerate(self._task_ids)}
 
         # task_id → agent_id 매핑
         self._task_to_agent = {
@@ -66,11 +71,18 @@ class QueryManifold:
         }
 
         # 임베딩 행렬 준비
-        if task_embeddings is not None and len(task_embeddings) > 0:
-            self._task_embeddings = task_embeddings
+        if task_embeddings is not None and len(task_embeddings) == len(features):
+            self._task_embeddings = np.asarray(task_embeddings)
         else:
             # 6D 특징 벡터를 대용으로 사용 (임베딩 미생성 시 폴백)
-            logger.warning("태스크 임베딩 없음 — 6D 특징 벡터로 대체합니다.")
+            if task_embeddings is not None and len(task_embeddings) != len(features):
+                logger.warning(
+                    "임베딩 개수(%s)와 태스크 개수(%s)가 달라 6D 특징 벡터로 대체합니다.",
+                    len(task_embeddings),
+                    len(features),
+                )
+            else:
+                logger.warning("태스크 임베딩 없음 — 6D 특징 벡터로 대체합니다.")
             self._task_embeddings = np.stack([f.vector for f in features])
 
         # 2D PCA 투영 (Voronoi + 시각화용)
@@ -85,16 +97,14 @@ class QueryManifold:
 
         # Agent별 Coverage Region 구성
         self._regions = []
-        task_id_list = [f.task_id for f in features]
-
         for agent in agents:
             agent_name = agent.suggested_name or agent.agent_id
-            agent_role = agent.suggested_role or ""
 
             # Agent에 속한 태스크 인덱스 수집
             agent_indices = [
-                i for i, tid in enumerate(task_id_list)
-                if tid in agent.task_ids
+                self._task_index_by_id[tid]
+                for tid in agent.task_ids
+                if tid in self._task_index_by_id
             ]
 
             if not agent_indices:
@@ -149,8 +159,7 @@ class QueryManifold:
                 coverage_complete=False,
             )
 
-        n_tasks = len(self._projected_2d)
-        coverage_ratio, overlap_ratio, gap_ratio = self._compute_2d_coverage()
+        coverage_ratio, overlap_ratio, gap_ratio = self._compute_embedding_coverage()
 
         # Agent별 커버리지 면적 (Voronoi 셀 기반)
         agent_areas = self._compute_voronoi_areas()
@@ -225,61 +234,39 @@ class QueryManifold:
 
     # ── 내부 계산 ─────────────────────────────────────────────────────────────
 
-    def _compute_2d_coverage(self) -> tuple[float, float, float]:
-        """2D 투영 공간에서 커버리지 비율 계산"""
-        points = self._projected_2d
-        if len(points) < 4:
-            return 1.0, 0.0, 0.0
+    def _compute_embedding_coverage(self) -> tuple[float, float, float]:
+        """
+        임베딩 공간에서 커버리지 비율 계산.
 
-        try:
-            hull = ConvexHull(points)
-            total_area = hull.area if points.shape[1] == 2 else hull.volume
+        - coverage_ratio: 하나 이상의 region 반경에 포함된 태스크 비율
+        - overlap_ratio: 두 개 이상 region에 동시에 포함된 태스크 비율
+        - gap_ratio: 어떤 region에도 포함되지 않은 태스크 비율
+        """
+        cover_counts = self._compute_task_cover_counts()
+        n_tasks = len(cover_counts)
+        if n_tasks == 0:
+            return 0.0, 0.0, 1.0
 
-            # Agent별 포인트로 서브 convex hull 계산
-            covered_area = 0.0
-            task_id_list = list(self._task_to_agent.keys())
-
-            for region in self._regions:
-                # 이 Agent에 속한 2D 포인트
-                agent_point_indices = [
-                    i for i, (p, a) in enumerate(zip(
-                        self._projected_2d,
-                        [self._task_to_agent.get(tid, "") for tid in task_id_list]
-                    ))
-                    if a == region.agent_id
-                ]
-
-                if len(agent_point_indices) >= 3:
-                    try:
-                        sub_hull = ConvexHull(self._projected_2d[agent_point_indices])
-                        covered_area += sub_hull.area if points.shape[1] == 2 else sub_hull.volume
-                    except Exception:
-                        pass
-
-            coverage_ratio = min(covered_area / total_area, 1.0) if total_area > 0 else 1.0
-            # 간단한 추정: overlap은 covered/total - 1이 양수인 경우
-            overlap_ratio = max(0.0, (covered_area / total_area) - 1.0) if total_area > 0 else 0.0
-            overlap_ratio = min(overlap_ratio, 1.0)
-            gap_ratio = max(0.0, 1.0 - coverage_ratio)
-
-        except Exception as e:
-            logger.warning(f"커버리지 계산 실패: {e}")
-            coverage_ratio = float(len(self._regions) > 0)
-            overlap_ratio = 0.0
-            gap_ratio = 1.0 - coverage_ratio
-
+        covered = (cover_counts > 0).sum()
+        overlapped = (cover_counts > 1).sum()
+        coverage_ratio = float(covered / n_tasks)
+        overlap_ratio = float(overlapped / n_tasks)
+        gap_ratio = float(1.0 - coverage_ratio)
         return coverage_ratio, overlap_ratio, gap_ratio
 
     def _compute_voronoi_areas(self) -> dict[str, float]:
         """Voronoi tessellation으로 Agent별 셀 면적 계산"""
         areas: dict[str, float] = {r.agent_id: 0.0 for r in self._regions}
 
+        task_counts = {rid: 0 for rid in areas}
+        for _, aid in self._task_to_agent.items():
+            if aid in task_counts:
+                task_counts[aid] += 1
+
+        total_count = sum(task_counts.values())
         if self._agent_centroids_2d is None or len(self._agent_centroids_2d) < 4:
-            # Voronoi에 최소 4개 포인트 필요 — 균등 분배로 대체
-            n = len(self._regions)
-            if n > 0:
-                for region in self._regions:
-                    areas[region.agent_id] = 1.0 / n
+            if total_count > 0:
+                return {aid: count / total_count for aid, count in task_counts.items()}
             return areas
 
         try:
@@ -294,33 +281,43 @@ class QueryManifold:
             ])
             extended = np.vstack([centroids, border_pts])
 
-            vor = Voronoi(extended)
+            # Voronoi 자체 계산 가능 여부만 확인하고, 면적은 task 수 기반 근사 사용
+            _ = Voronoi(extended)
             # Voronoi 셀 면적은 정확 계산이 복잡 — 태스크 카운트 기반 근사 사용
-            for region in self._regions:
-                count = len(region.task_embeddings)
-                areas[region.agent_id] = float(count)
-
-            # 정규화
-            total = sum(areas.values())
-            if total > 0:
-                areas = {k: v / total for k, v in areas.items()}
+            if total_count > 0:
+                areas = {aid: count / total_count for aid, count in task_counts.items()}
 
         except Exception as e:
             logger.warning(f"Voronoi 계산 실패: {e}. 태스크 수 기반 근사 사용.")
-            total = sum(len(r.task_embeddings) for r in self._regions)
-            if total > 0:
-                for region in self._regions:
-                    areas[region.agent_id] = len(region.task_embeddings) / total
+            if total_count > 0:
+                areas = {aid: count / total_count for aid, count in task_counts.items()}
 
         return areas
 
+    def _compute_task_cover_counts(self) -> np.ndarray:
+        """각 태스크가 몇 개의 region에 커버되는지 계산"""
+        if self._task_embeddings is None or len(self._task_embeddings) == 0:
+            return np.array([], dtype=int)
+
+        cover_counts = np.zeros(len(self._task_embeddings), dtype=int)
+        for region in self._regions:
+            centroid = region.centroid_array()
+            min_similarity = 1.0 - float(np.clip(region.radius, 0.0, 1.0))
+            for idx, emb in enumerate(self._task_embeddings):
+                sim = Embedder.cosine_similarity(centroid, emb)
+                if sim >= min_similarity:
+                    cover_counts[idx] += 1
+        return cover_counts
+
     def _find_uncovered_tasks(self) -> list[str]:
         """어떤 Coverage Region에도 포함되지 않는 태스크 ID 반환"""
-        covered = {tid for region in self._regions
-                   for tid in (self._task_to_agent.keys()
-                                if region.task_embeddings else [])}
-        all_tasks = set(self._task_to_agent.keys())
-        return list(all_tasks - covered)
+        cover_counts = self._compute_task_cover_counts()
+        if len(cover_counts) == 0:
+            return list(self._task_ids)
+        return [
+            task_id for task_id, count in zip(self._task_ids, cover_counts)
+            if count == 0
+        ]
 
     def _find_overlap_pairs(self) -> list[tuple[str, str]]:
         """centroid 간 거리가 radius 합보다 작은 에이전트 쌍 (중첩 영역 존재)"""
@@ -330,7 +327,7 @@ class QueryManifold:
                 ci = ri.centroid_array()
                 cj = rj.centroid_array()
                 sim = Embedder.cosine_similarity(ci, cj)
-                # 코사인 유사도 0.8 이상 → 영역 중첩 가능성
-                if sim > 0.8:
+                cosine_distance = 1.0 - sim
+                if cosine_distance <= (ri.radius + rj.radius):
                     pairs.append((ri.agent_id, rj.agent_id))
         return pairs

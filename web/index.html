@@ -48,6 +48,8 @@
           <div class="stat-divider"></div>
           <div class="stat"><span class="stat-num">TDA</span><span class="stat-label">Mapper 알고리즘</span></div>
           <div class="stat-divider"></div>
+          <div class="stat"><span class="stat-num">HDBSCAN</span><span class="stat-label">자동 클러스터링</span></div>
+          <div class="stat-divider"></div>
           <div class="stat"><span class="stat-num">MCP</span><span class="stat-label">Tool 자동 생성</span></div>
         </div>
       </div>
@@ -136,7 +138,7 @@
           <span class="math-desc">사용자 쿼리 매니폴드가 Unit Agent들의 열린 피복으로 완전히 덮여야 합니다</span>
         </div>
         <div id="coveragePanel"></div>
-        <div class="viz-card" style="margin-top:16px" id="manifoldVizCard" style="display:none">
+        <div class="viz-card" id="manifoldVizCard" style="margin-top:16px; display:none">
           <h3 class="viz-title">Query Manifold 시각화</h3>
           <iframe id="manifoldFrame" class="viz-frame" src="about:blank"></iframe>
         </div>
@@ -219,7 +221,7 @@
           <div class="step-num">3</div>
           <div class="step-body">
             <h3>Agent 발견</h3>
-            <p>KMeans 클러스터링으로 유사한 태스크를 묶어 Agent를 자동 정의합니다</p>
+            <p>HDBSCAN이 유사한 태스크를 자동으로 묶어 Agent를 발견합니다. k를 몰라도 최적 클러스터 수를 자동 결정합니다</p>
           </div>
         </div>
         <div class="pipeline-arrow">→</div>
@@ -235,7 +237,7 @@
   </section>
 
   <footer class="footer">
-    <p>TAD-Mapper v0.2.0 · Powered by Gemini AI · TDA + 수학적 정식화 (Q ⊆ ∪Ui, Φ, ∘)</p>
+    <p>TAD-Mapper v0.2.2 · Powered by Gemini AI · TDA + 수학적 정식화 (Q ⊆ ∪Ui, Φ, ∘)</p>
   </footer>
 
   <script src="/web/index.js"></script>

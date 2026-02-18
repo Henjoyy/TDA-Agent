@@ -25,6 +25,8 @@ from tad_mapper.models.topology import CompositionPlan, ToolExecutionStep
 
 logger = logging.getLogger(__name__)
 
+_GENERIC_PARAM_KEYS = {"query", "text", "input", "prompt", "question", "request"}
+
 _COMPOSE_PROMPT = """
 당신은 AI 에이전트 시스템의 도구 합성 전문가입니다.
 
@@ -214,19 +216,28 @@ class ToolComposer:
         """
         Tool 간 의존성 그래프 구성.
 
-        output_data와 input_data의 키워드 매칭으로 자동 추론합니다.
+        현재 스키마에는 명시적 output 정의가 없으므로,
+        각 Tool의 입력 파라미터 키를 기준으로 약한 의존성을 추론합니다.
+        반환 형식: {tool_name: [해당 tool 실행 전에 필요한 선행 tool 이름]}
         """
         graph: dict[str, list[str]] = {t.name: [] for t in tools}
 
-        for i, tool_a in enumerate(tools):
-            output_keys = set(tool_a.inputSchema.required)
+        for tool_a in tools:
+            # 명시적 output schema가 없으므로 input key를 대리 신호로 사용
+            output_keys = (
+                set(tool_a.inputSchema.properties.keys()) | set(tool_a.inputSchema.required)
+            ) - _GENERIC_PARAM_KEYS
             for tool_b in tools:
                 if tool_b.name == tool_a.name:
                     continue
-                input_keys = set(tool_b.inputSchema.properties.keys())
+                input_keys = set(tool_b.inputSchema.required) - _GENERIC_PARAM_KEYS
                 # 출력 키와 입력 키가 겹치면 의존성 있음
                 if output_keys & input_keys:
                     graph[tool_b.name].append(tool_a.name)
+
+        # 중복 제거 + 정렬로 결정적 동작 보장
+        for tool_name, deps in graph.items():
+            graph[tool_name] = sorted(set(deps))
 
         return graph
 
@@ -234,31 +245,26 @@ class ToolComposer:
         self, tools: list[MCPToolSchema], dep_graph: dict[str, list[str]]
     ) -> list[str]:
         """의존성 그래프 위상 정렬 (실행 가능한 순서 도출)"""
-        in_degree: dict[str, int] = defaultdict(int)
-        for deps in dep_graph.values():
+        all_nodes = [t.name for t in tools]
+        in_degree: dict[str, int] = {
+            node: len(dep_graph.get(node, [])) for node in all_nodes
+        }
+        reverse_adj: dict[str, list[str]] = defaultdict(list)
+        for node, deps in dep_graph.items():
             for dep in deps:
-                in_degree[dep] += 0  # 초기화
-            for dep in deps:
-                in_degree[dep] = in_degree.get(dep, 0)
+                if dep in in_degree:
+                    reverse_adj[dep].append(node)
 
-        # 진입 차수 계산
-        for name in dep_graph:
-            in_degree.setdefault(name, 0)
-        for deps in dep_graph.values():
-            for dep in deps:
-                in_degree[dep] = in_degree.get(dep, 0) + 1
-
-        queue = deque([name for name in dep_graph if in_degree.get(name, 0) == 0])
+        queue = deque(sorted(name for name, deg in in_degree.items() if deg == 0))
         result: list[str] = []
 
         while queue:
             node = queue.popleft()
             result.append(node)
-            for neighbor, deps in dep_graph.items():
-                if node in deps:
-                    in_degree[neighbor] -= 1
-                    if in_degree[neighbor] == 0:
-                        queue.append(neighbor)
+            for neighbor in sorted(reverse_adj.get(node, [])):
+                in_degree[neighbor] -= 1
+                if in_degree[neighbor] == 0:
+                    queue.append(neighbor)
 
         # 순환 의존성이 있으면 남은 노드 추가
         remaining = [t.name for t in tools if t.name not in result]

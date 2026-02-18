@@ -9,9 +9,13 @@ FastAPI 백엔드 - TAD-Mapper 웹 API
 """
 from __future__ import annotations
 
+from collections import OrderedDict
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 import logging
 import tempfile
 from pathlib import Path
+from threading import Lock
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,7 +23,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from config.settings import OUTPUT_DIR
+from config.settings import OUTPUT_DIR, GEMINI_MODEL
 from tad_mapper.pipeline import PipelineResult, TADMapperPipeline
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(name)s | %(message)s")
@@ -31,7 +35,7 @@ app = FastAPI(
         "AI 적용 기회를 Unit Agent와 MCP Tool로 자동 변환하는 시스템. "
         "수학적 정식화: Q ⊆ ∪Ui, Φ: Q → {Uk}, y = (t_π(m) ∘ ... ∘ t_π(1))(x)"
     ),
-    version="0.2.0",
+    version="0.2.2",
 )
 
 app.add_middleware(
@@ -46,8 +50,72 @@ WEB_DIR = Path(__file__).parent.parent / "web"
 app.mount("/web", StaticFiles(directory=str(WEB_DIR)), name="web")
 
 # ── 세션 상태 관리 ────────────────────────────────────────────────────────────
-# output_id → (TADMapperPipeline, PipelineResult)
-_sessions: dict[str, tuple[TADMapperPipeline, PipelineResult]] = {}
+# output_id → SessionEntry (TTL + LRU)
+SESSION_TTL = timedelta(hours=1)
+MAX_SESSIONS = 32
+
+
+@dataclass
+class SessionEntry:
+    pipeline: TADMapperPipeline
+    result: PipelineResult
+    created_at: datetime
+    last_accessed: datetime
+
+
+_sessions: OrderedDict[str, SessionEntry] = OrderedDict()
+_sessions_lock = Lock()
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _purge_sessions_locked(now: datetime) -> None:
+    expired = [
+        output_id
+        for output_id, entry in _sessions.items()
+        if now - entry.last_accessed > SESSION_TTL
+    ]
+    for output_id in expired:
+        _sessions.pop(output_id, None)
+
+    while len(_sessions) > MAX_SESSIONS:
+        _sessions.popitem(last=False)
+
+
+def _set_session(
+    output_id: str, pipeline: TADMapperPipeline, result: PipelineResult
+) -> None:
+    now = _utcnow()
+    with _sessions_lock:
+        _sessions[output_id] = SessionEntry(
+            pipeline=pipeline,
+            result=result,
+            created_at=now,
+            last_accessed=now,
+        )
+        _sessions.move_to_end(output_id)
+        _purge_sessions_locked(now)
+
+
+def _get_session(output_id: str) -> tuple[TADMapperPipeline, PipelineResult] | None:
+    now = _utcnow()
+    with _sessions_lock:
+        _purge_sessions_locked(now)
+        entry = _sessions.get(output_id)
+        if entry is None:
+            return None
+        entry.last_accessed = now
+        _sessions.move_to_end(output_id)
+        return entry.pipeline, entry.result
+
+
+def _active_session_count() -> int:
+    now = _utcnow()
+    with _sessions_lock:
+        _purge_sessions_locked(now)
+        return len(_sessions)
 
 
 # ── 요청/응답 모델 ─────────────────────────────────────────────────────────────
@@ -109,7 +177,7 @@ async def analyze(
 
         # 세션 저장 (라우팅/합성 API에서 재사용)
         output_id = result.journey.id
-        _sessions[output_id] = (pipeline, result)
+        _set_session(output_id, pipeline, result)
 
         out_dir = OUTPUT_DIR / output_id
 
@@ -150,6 +218,7 @@ async def analyze(
                 "mcp_tool_count": len(result.mcp_tools),
                 "hole_count": len(result.holes),
                 "overlap_count": len(result.overlaps),
+                "clustering_algorithm": "HDBSCAN" if n_agents is None else "KMeans (사용자 지정)",
             },
             "coverage": coverage_summary,
             "tool_balance": balance_summary,
@@ -184,7 +253,7 @@ async def route_query(req: RouteRequest):
     동일한 의도의 다양한 표현을 같은 Agent로 라우팅합니다.
     예) "자료 찾아줘", "데이터 검색해", "정보 줘" → 같은 Agent
     """
-    session = _sessions.get(req.output_id)
+    session = _get_session(req.output_id)
     if not session:
         raise HTTPException(
             status_code=404,
@@ -192,7 +261,7 @@ async def route_query(req: RouteRequest):
                    "먼저 /api/analyze를 실행하세요."
         )
 
-    pipeline, result = session
+    pipeline, _ = session
     if pipeline.router is None or not pipeline.router.is_ready:
         raise HTTPException(
             status_code=503,
@@ -227,14 +296,14 @@ async def compose_tools(req: ComposeRequest):
 
     Agent가 쿼리에 맞게 MCP Tool을 동적으로 조립합니다.
     """
-    session = _sessions.get(req.output_id)
+    session = _get_session(req.output_id)
     if not session:
         raise HTTPException(
             status_code=404,
             detail=f"세션 '{req.output_id}'를 찾을 수 없습니다."
         )
 
-    pipeline, result = session
+    pipeline, _ = session
 
     try:
         plan = pipeline.compose_tools(req.query, req.agent_id)
@@ -262,7 +331,7 @@ async def get_coverage(output_id: str):
     """
     Q ⊆ ∪Ui 커버리지 메트릭을 반환합니다.
     """
-    session = _sessions.get(output_id)
+    session = _get_session(output_id)
     if not session:
         raise HTTPException(
             status_code=404,
@@ -305,14 +374,14 @@ async def route_and_compose(req: RouteAndComposeRequest):
     1. Φ(x) = U_k (쿼리 → Agent 라우팅)
     2. y = (t_π(m) ∘ ... ∘ t_π(1))(x) (Tool 합성 계획)
     """
-    session = _sessions.get(req.output_id)
+    session = _get_session(req.output_id)
     if not session:
         raise HTTPException(
             status_code=404,
             detail=f"세션 '{req.output_id}'를 찾을 수 없습니다."
         )
 
-    pipeline, result = session
+    pipeline, _ = session
 
     try:
         routing, composition = pipeline.route_and_compose(req.query)
@@ -362,12 +431,20 @@ async def get_sample():
 async def health():
     return {
         "status": "ok",
-        "version": "0.2.0",
+        "version": "0.2.2",
         "features": [
+            "hdbscan_clustering",
             "query_manifold",
             "homotopy_routing",
             "tool_composition",
             "agile_tool_balancing",
+            "god_agent_prevention",
         ],
-        "active_sessions": len(_sessions),
+        "clustering": {
+            "algorithm": "HDBSCAN",
+            "fallback": "KMeans",
+            "description": "k를 몰라도 최적 클러스터 수 자동 결정, 비구형 클러스터 지원",
+        },
+        "model": GEMINI_MODEL,
+        "active_sessions": _active_session_count(),
     }

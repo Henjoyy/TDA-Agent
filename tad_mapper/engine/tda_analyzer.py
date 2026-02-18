@@ -1,20 +1,30 @@
 """
-TDA Analyzer - scikit-learn 기반 Mapper 알고리즘
+TDA Analyzer - HDBSCAN 기반 Mapper 알고리즘
 AI 적용 기회들을 위상 공간에 매핑하고 클러스터를 자동 발견합니다.
+
+클러스터링 전략:
+- 1단계: HDBSCAN으로 자연스러운 클러스터 자동 발견 (k 불필요)
+- 2단계: 노이즈 태스크 → K-Means로 가장 가까운 클러스터에 배정
+- 3단계: refine_clusters()로 God Agent 방지 (MAX_TASKS_PER_AGENT 초과 시 분할)
 """
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
 
+import hdbscan
 import numpy as np
 from sklearn.cluster import DBSCAN, KMeans
 from sklearn.decomposition import PCA
+from sklearn.metrics import pairwise_distances_argmin_min
 from sklearn.preprocessing import StandardScaler
 
 from tad_mapper.engine.feature_extractor import TopologicalFeature
 
 logger = logging.getLogger(__name__)
+
+# Agent당 최대 태스크 수 - 이 값을 초과하면 자동 분할
+MAX_TASKS_PER_AGENT = 15
 
 
 @dataclass
@@ -49,6 +59,7 @@ class DiscoveredAgent:
     suggested_name: str = ""
     suggested_role: str = ""
     suggested_capabilities: list[str] = field(default_factory=list)
+    tool_prefix: str = ""
 
 
 class TDAAnalyzer:
@@ -182,9 +193,15 @@ class TDAAnalyzer:
         n_agents: int | None = None,
     ) -> list[DiscoveredAgent]:
         """
-        데이터 기반 Agent 자동 발견.
+        HDBSCAN 기반 Agent 자동 발견.
 
-        n_agents가 None이면 엘보우 방법으로 최적 클러스터 수 자동 결정.
+        K-Means 대비 장점:
+        - k를 미리 지정할 필요 없음 (자동 결정)
+        - 비구형(non-spherical) 클러스터 지원
+        - 노이즈 태스크 자동 분리 후 K-Means로 재배정
+        - 의미적으로 유사한 태스크들이 자연스럽게 묶임
+
+        n_agents가 지정되면 HDBSCAN 결과를 무시하고 KMeans로 강제 분할.
         """
         if len(features) < 2:
             return [DiscoveredAgent(
@@ -199,31 +216,223 @@ class TDAAnalyzer:
         scaler = StandardScaler()
         matrix_scaled = scaler.fit_transform(matrix)
 
-        # 최적 클러스터 수 결정
-        if n_agents is None:
-            n_agents = self._find_optimal_k(matrix_scaled)
+        # n_agents가 명시적으로 지정된 경우 → KMeans 강제 사용
+        if n_agents is not None:
+            n_agents = min(n_agents, len(features))
+            logger.info(f"Agent 자동 발견: KMeans {n_agents}개 클러스터 (사용자 지정)")
+            kmeans = KMeans(n_clusters=n_agents, random_state=42, n_init=10)
+            labels = kmeans.fit_predict(matrix_scaled)
+            return self._build_agents_from_labels(features, matrix_scaled, labels)
 
-        n_agents = min(n_agents, len(features))
-        logger.info(f"Agent 자동 발견: {n_agents}개 클러스터로 분류")
+        # ── HDBSCAN 자동 클러스터링 ──────────────────────────────────────────
+        # min_cluster_size: 에이전트가 되려면 최소 몇 개 태스크가 필요한지
+        # 태스크 수에 따라 동적으로 조정 (소규모: 2, 대규모: 3~5)
+        n = len(features)
+        min_cluster_size = max(2, min(5, n // 6))
+        min_samples = max(1, min_cluster_size // 2)
 
-        kmeans = KMeans(n_clusters=n_agents, random_state=42, n_init=10)
-        labels = kmeans.fit_predict(matrix_scaled)
+        logger.info(
+            f"HDBSCAN 클러스터링 시작: {n}개 태스크, "
+            f"min_cluster_size={min_cluster_size}, min_samples={min_samples}"
+        )
 
+        clusterer = hdbscan.HDBSCAN(
+            min_cluster_size=min_cluster_size,
+            min_samples=min_samples,
+            metric="euclidean",
+            cluster_selection_method="eom",  # Excess of Mass: 안정적인 클러스터 선택
+            prediction_data=True,
+        )
+        labels = clusterer.fit_predict(matrix_scaled)
+
+        n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+        n_noise = int((labels == -1).sum())
+        logger.info(
+            f"HDBSCAN 결과: {n_clusters}개 클러스터, {n_noise}개 노이즈 태스크"
+        )
+
+        # 클러스터가 1개 이하면 KMeans 폴백
+        if n_clusters <= 1:
+            fallback_k = self._find_optimal_k(matrix_scaled)
+            logger.warning(
+                f"HDBSCAN 클러스터 수 부족 ({n_clusters}개). "
+                f"KMeans 폴백 (k={fallback_k})"
+            )
+            kmeans = KMeans(n_clusters=fallback_k, random_state=42, n_init=10)
+            labels = kmeans.fit_predict(matrix_scaled)
+            return self._build_agents_from_labels(features, matrix_scaled, labels)
+
+        # ── 노이즈 태스크 재배정 ─────────────────────────────────────────────
+        # HDBSCAN이 -1(노이즈)로 분류한 태스크를 가장 가까운 클러스터에 배정
+        if n_noise > 0:
+            labels = self._assign_noise_to_nearest(
+                matrix_scaled, labels, n_clusters
+            )
+            logger.info(f"  → 노이즈 {n_noise}개 태스크를 인접 클러스터에 재배정 완료")
+
+        return self._build_agents_from_labels(features, matrix_scaled, labels)
+
+    @staticmethod
+    def _assign_noise_to_nearest(
+        matrix: np.ndarray,
+        labels: np.ndarray,
+        n_clusters: int,
+    ) -> np.ndarray:
+        """
+        HDBSCAN 노이즈 포인트(-1)를 가장 가까운 클러스터 centroid에 배정합니다.
+        """
+        labels = labels.copy()
+        noise_mask = labels == -1
+        if not noise_mask.any():
+            return labels
+
+        # 각 클러스터의 centroid 계산
+        centroids = np.array([
+            matrix[labels == k].mean(axis=0)
+            for k in range(n_clusters)
+        ])
+
+        # 노이즈 포인트 → 가장 가까운 centroid 배정
+        noise_points = matrix[noise_mask]
+        nearest_clusters, _ = pairwise_distances_argmin_min(noise_points, centroids)
+        labels[noise_mask] = nearest_clusters
+        return labels
+
+    @staticmethod
+    def _build_agents_from_labels(
+        features: list[TopologicalFeature],
+        matrix_scaled: np.ndarray,
+        labels: np.ndarray,
+    ) -> list[DiscoveredAgent]:
+        """레이블 배열로부터 DiscoveredAgent 목록을 생성합니다."""
+        unique_labels = sorted(set(labels))
         agents: list[DiscoveredAgent] = []
-        for k in range(n_agents):
+        for idx, k in enumerate(unique_labels):
             mask = labels == k
             cluster_features = [f for f, m in zip(features, mask) if m]
-            centroid = matrix_scaled[mask].mean(axis=0) if mask.any() else np.zeros(matrix_scaled.shape[1])
-
+            centroid = matrix_scaled[mask].mean(axis=0)
             agents.append(DiscoveredAgent(
-                agent_id=f"agent_{k}",
-                cluster_id=k,
+                agent_id=f"agent_{idx}",
+                cluster_id=idx,
                 task_ids=[f.task_id for f in cluster_features],
                 task_names=[f.task_name for f in cluster_features],
                 centroid=centroid,
             ))
-
+        logger.info(
+            f"Agent 구성 완료: {len(agents)}개 "
+            f"(태스크 분포: {[len(a.task_ids) for a in agents]})"
+        )
         return agents
+
+    def refine_clusters(
+        self,
+        agents: list[DiscoveredAgent],
+        features: list[TopologicalFeature],
+        max_tasks: int = MAX_TASKS_PER_AGENT,
+    ) -> list[DiscoveredAgent]:
+        """
+        God Agent 방지: 태스크가 너무 많은 Agent를 자동 분할합니다.
+
+        max_tasks를 초과하는 Agent에 대해 재귀적으로 K-Means 서브클러스터링을
+        적용하여 균형 잡힌 에이전트 분포를 만듭니다.
+
+        Args:
+            agents: 발견된 Agent 목록
+            features: 원본 태스크 특징 벡터 목록
+            max_tasks: Agent당 최대 허용 태스크 수
+
+        Returns:
+            균형 잡힌 Agent 목록 (분할된 Agent 포함)
+        """
+        feature_map = {f.task_id: f for f in features}
+        refined: list[DiscoveredAgent] = []
+
+        for agent in agents:
+            if len(agent.task_ids) <= max_tasks:
+                refined.append(agent)
+            else:
+                logger.warning(
+                    f"God Agent 탐지: '{agent.suggested_name or agent.agent_id}' "
+                    f"({len(agent.task_ids)}개 태스크 > 최대 {max_tasks}개). 분할 시작."
+                )
+                split = self._split_large_agent(agent, feature_map, max_tasks)
+                refined.extend(split)
+                logger.info(
+                    f"  → {len(split)}개 서브 에이전트로 분할 완료: "
+                    f"{[a.agent_id for a in split]}"
+                )
+
+        if len(refined) != len(agents):
+            logger.info(
+                f"클러스터 정제 완료: {len(agents)}개 → {len(refined)}개 Agent "
+                f"(태스크 상한: {max_tasks}개/Agent)"
+            )
+
+        return refined
+
+    def _split_large_agent(
+        self,
+        agent: DiscoveredAgent,
+        feature_map: dict[str, "TopologicalFeature"],
+        max_tasks: int,
+    ) -> list[DiscoveredAgent]:
+        """
+        단일 Agent를 재귀적으로 분할합니다.
+        분할 수 = ceil(task_count / max_tasks)
+        """
+        agent_features = [
+            feature_map[tid]
+            for tid in agent.task_ids
+            if tid in feature_map
+        ]
+
+        if len(agent_features) < 2:
+            return [agent]
+
+        # 필요한 서브클러스터 수 계산
+        import math
+        n_split = min(
+            math.ceil(len(agent.task_ids) / max_tasks),
+            len(agent_features),
+        )
+        n_split = max(n_split, 2)  # 최소 2분할
+
+        matrix = np.stack([f.vector for f in agent_features])
+        from sklearn.preprocessing import StandardScaler
+        matrix_scaled = StandardScaler().fit_transform(matrix)
+
+        kmeans = KMeans(n_clusters=n_split, random_state=42, n_init=10)
+        labels = kmeans.fit_predict(matrix_scaled)
+
+        split_agents: list[DiscoveredAgent] = []
+        suffix_labels = ["A", "B", "C", "D", "E", "F"]
+        base_name = agent.suggested_name or agent.agent_id
+        base_id = agent.agent_id
+
+        for k in range(n_split):
+            mask = labels == k
+            sub_features = [f for f, m in zip(agent_features, mask) if m]
+            if not sub_features:
+                continue
+
+            suffix = suffix_labels[k] if k < len(suffix_labels) else str(k)
+            sub_centroid = matrix_scaled[mask].mean(axis=0)
+
+            sub_agent = DiscoveredAgent(
+                agent_id=f"{base_id}_sub{k}",
+                cluster_id=agent.cluster_id * 10 + k,
+                task_ids=[f.task_id for f in sub_features],
+                task_names=[f.task_name for f in sub_features],
+                centroid=sub_centroid,
+                # 이름은 AgentNamer가 나중에 재명명함
+                # 임시 이름은 기존 이름 + 접미사
+                suggested_name=f"{base_name} {suffix}",
+                suggested_role=agent.suggested_role,
+                suggested_capabilities=list(agent.suggested_capabilities),
+            )
+            split_agents.append(sub_agent)
+
+        return split_agents if split_agents else [agent]
 
     @staticmethod
     def _find_optimal_k(matrix: np.ndarray, max_k: int = 8) -> int:

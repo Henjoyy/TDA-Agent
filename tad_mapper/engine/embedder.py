@@ -10,6 +10,7 @@ Gemini Embedding 기반 벡터 생성기
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 
 import google.genai as genai
@@ -93,8 +94,8 @@ class Embedder:
             )
             return result.embeddings[0].values
         except Exception as e:
-            logger.warning(f"임베딩 생성 실패: {e}. 랜덤 벡터 사용.")
-            return list(np.random.randn(self.EMBEDDING_DIM).tolist())
+            logger.warning(f"임베딩 생성 실패: {e}. 결정적 fallback 벡터 사용.")
+            return self._deterministic_fallback_vector(text)
 
     @staticmethod
     def _task_to_text(task: TaskStep) -> str:
@@ -130,3 +131,19 @@ class Embedder:
         if norm_a == 0 or norm_b == 0:
             return 0.0
         return float(np.dot(a, b) / (norm_a * norm_b))
+
+    @classmethod
+    def _deterministic_fallback_vector(cls, text: str) -> list[float]:
+        """
+        텍스트 해시 기반 결정적 fallback 벡터.
+        외부 API 실패 시에도 재현 가능한 결과를 유지합니다.
+        """
+        seed = int.from_bytes(
+            hashlib.sha256(text.encode("utf-8")).digest()[:8], "big"
+        )
+        rng = np.random.default_rng(seed)
+        vec = rng.standard_normal(cls.EMBEDDING_DIM)
+        norm = np.linalg.norm(vec)
+        if norm > 0:
+            vec = vec / norm
+        return vec.tolist()

@@ -122,6 +122,7 @@ class ReportGenerator:
                     "name_ko": a.suggested_name,
                     "role": a.suggested_role,
                     "capabilities": a.suggested_capabilities,
+                    "tool_prefix": a.tool_prefix,
                     "task_ids": a.task_ids,
                     "task_names": a.task_names,
                 }

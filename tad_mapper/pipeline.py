@@ -156,9 +156,15 @@ class TADMapperPipeline:
         agents = self._tda.discover_agents(features, n_agents=self.n_agents)
         logger.info(f"  → {len(agents)}개 Agent 클러스터 발견")
 
+        # 4.5. God Agent 방지: 태스크 과부하 Agent 자동 분할 [신규]
+        logger.info("[4.5/11] God Agent 방지 - 클러스터 균형 정제 중...")
+        agents = self._tda.refine_clusters(agents, features)
+        logger.info(f"  → 정제 후 {len(agents)}개 Agent")
+
         # 5. Agent 명명
         logger.info("[5/11] Gemini LLM으로 Agent 이름/역할 부여 중...")
         agents = self._namer.name_agents(agents)
+
 
         # 6. Hole/Overlap 탐지
         logger.info("[6/11] Hole/Overlap 탐지 중...")
@@ -269,7 +275,7 @@ class TADMapperPipeline:
             coverage_metrics=coverage_metrics,
             balance_report=balance_report,
         )
-        print(self._result.summary())
+        logger.info("\n%s", self._result.summary())
         return self._result
 
     # ── 런타임 라우팅 API ────────────────────────────────────────────────────

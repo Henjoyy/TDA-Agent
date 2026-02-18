@@ -160,6 +160,16 @@ class TestCoverageMetrics:
         metrics = empty_manifold.compute_coverage()
         assert metrics.coverage_ratio == 0.0
 
+    def test_uncovered_tasks_detected_when_region_radius_too_small(self):
+        """region 반경이 매우 작으면 uncovered_task_ids가 계산되어야 함"""
+        for region in self.manifold.regions:
+            region.radius = 0.0
+
+        metrics = self.manifold.compute_coverage()
+        assert len(metrics.uncovered_task_ids) > 0
+        assert metrics.coverage_complete is False
+        assert metrics.gap_ratio > 0.0
+
 
 class TestFindNearestRegion:
     def setup_method(self):
