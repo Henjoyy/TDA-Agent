@@ -27,7 +27,7 @@ def make_agent(agent_id: str, task_ids: list[str]) -> DiscoveredAgent:
         cluster_id=0,
         task_ids=task_ids,
         task_names=[f"Task {t}" for t in task_ids],
-        centroid=np.random.rand(6),
+        centroid=np.random.rand(10),
         suggested_name=f"Agent {agent_id}",
         suggested_role="테스트 역할",
     )
@@ -51,15 +51,20 @@ def make_tool(name: str, agent_id: str, task_id: str) -> MCPToolSchema:
 
 
 def make_feature(task_id: str) -> TopologicalFeature:
+    vals = np.random.random(10)
     return TopologicalFeature(
         task_id=task_id,
         task_name=f"Task {task_id}",
-        data_type=round(np.random.random(), 2),
-        reasoning_depth=round(np.random.random(), 2),
-        automation_potential=round(np.random.random(), 2),
-        interaction_type=round(np.random.random(), 2),
-        output_complexity=round(np.random.random(), 2),
-        domain_specificity=round(np.random.random(), 2),
+        data_type=round(float(vals[0]), 2),
+        reasoning_depth=round(float(vals[1]), 2),
+        automation_potential=round(float(vals[2]), 2),
+        interaction_type=round(float(vals[3]), 2),
+        output_complexity=round(float(vals[4]), 2),
+        domain_specificity=round(float(vals[5]), 2),
+        temporal_sensitivity=round(float(vals[6]), 2),
+        data_volume=round(float(vals[7]), 2),
+        security_level=round(float(vals[8]), 2),
+        state_dependency=round(float(vals[9]), 2),
     )
 
 

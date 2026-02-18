@@ -9,6 +9,7 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from tad_mapper.engine.feature_extractor import TopologicalFeature
 from tad_mapper.engine.tda_analyzer import DiscoveredAgent
 from tad_mapper.models.agent import HoleWarning, MappingResult, OverlapWarning
 from tad_mapper.models.mcp_tool import MCPToolSchema
@@ -110,11 +111,36 @@ class ReportGenerator:
         tools: list[MCPToolSchema],
         holes: list[HoleWarning],
         overlaps: list[OverlapWarning],
+        features: list[TopologicalFeature] | None = None,
     ) -> dict:
         """JSON 형식 결과 딕셔너리 생성"""
+        feature_items = features or []
         return {
             "journey_title": journey_title,
             "timestamp": datetime.now().isoformat(),
+            "feature_space": {
+                "dimensions": len(feature_items[0].vector) if feature_items else 0,
+                "dimension_names": [
+                    "data_type",
+                    "reasoning_depth",
+                    "automation_potential",
+                    "interaction_type",
+                    "output_complexity",
+                    "domain_specificity",
+                    "temporal_sensitivity",
+                    "data_volume",
+                    "security_level",
+                    "state_dependency",
+                ],
+                "task_features": [
+                    {
+                        "task_id": f.task_id,
+                        "task_name": f.task_name,
+                        "vector": [float(v) for v in f.vector.tolist()],
+                    }
+                    for f in feature_items
+                ],
+            },
             "agents": [
                 {
                     "agent_id": a.agent_id,

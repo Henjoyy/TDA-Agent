@@ -2,7 +2,7 @@
 
 **AI 적용 기회(User Journey)를 입력하면 위상수학적 알고리즘으로 Unit Agent와 MCP Tool을 자동 설계하는 시스템**
 
-> **v0.2.2** — 안정화 리팩토링: 커버리지 계산 정확도 개선, Tool 합성 정렬 수정, Agent ID 안정화, 세션 TTL/LRU 관리
+> **v0.2.5** — 수학적 엔진 고도화: 10D 특징 벡터, Weighted 클러스터링, Softmax 기반 확률 라우팅
 
 ---
 
@@ -21,6 +21,12 @@ Master Agent가 쿼리를 의미적으로 분류하여 적절한 Unit Agent로 �
 $$\Phi : \mathcal{Q} \to \{U_{Search}, U_{Stats}, \ldots, U_{Report}\} \qquad \Phi(x) = U_k \iff [x] = [x_k]$$
 
 "자료 찾아줘", "데이터 검색해", "정보 좀 줘" → 호모토피 동치류 [x]가 같으므로 모두 동일한 Agent로 라우팅
+
+### 2-1. Soft Routing (확률 라우팅)
+
+하드 라우팅과 함께 각 Agent에 대한 확률 분포를 계산합니다.
+
+$$P(U_k \mid x) = \frac{\exp(\text{sim}(x,c_k)/\tau)}{\sum_j \exp(\text{sim}(x,c_j)/\tau)}$$
 
 ### 3. MCP Tool 합성 (함수 합성)
 
@@ -72,7 +78,7 @@ python -m tad_mapper.pipeline data/samples/trade_journey.json
 ```
 User Journey (JSON/CSV)
         ↓
-[1]  Feature Extraction    ← Gemini LLM → 6D 위상학적 벡터
+[1]  Feature Extraction    ← Gemini LLM → 10D 위상학적 벡터
         ↓
 [2]  TDA Mapper            ← scikit-learn Mapper 알고리즘
         ↓
@@ -101,6 +107,13 @@ User Journey (JSON/CSV)
 
 ## 신규 기능 (v0.2.0)
 
+### 수학적 엔진 고도화 (v0.2.5)
+
+- **10D 위상 특징 벡터**: 기존 6D에 `temporal_sensitivity`, `data_volume`, `security_level`, `state_dependency`를 추가해 미세한 태스크 차이를 반영합니다.
+- **Weighted Euclidean 클러스터링**: `reasoning_depth`, `domain_specificity`를 1.5x 가중해 Agent 정체성을 더 강하게 반영합니다.
+- **적응형 라우팅 반경**: Agent별 태스크 분산(평균 거리 + 표준편차 + margin)으로 반경을 동적으로 계산합니다.
+- **확률 라우팅(Φ_soft)**: `route_soft()`와 `routing_probabilities`로 다중 Agent 후보 확률을 제공합니다.
+
 ### Query Manifold & 커버리지 분석
 
 태스크 임베딩을 기반으로 각 Agent의 커버리지 반경을 계산하고, 태스크 단위 커버/중첩/갭을 측정합니다.
@@ -117,6 +130,19 @@ User Journey (JSON/CSV)
 - **Agent ID 안정화**: LLM 명명 단계에서 내부 `agent_id`를 변경하지 않도록 수정하고, `tool_prefix`를 별도 필드로 분리했습니다.
 - **임베딩 실패 fallback 개선**: 랜덤 벡터 대신 텍스트 해시 기반 결정적 벡터를 사용해 재현성을 확보했습니다.
 - **API 세션 관리 개선**: `/api/analyze` 결과 세션에 TTL(1시간) + LRU(최대 32개) 정책을 적용했습니다.
+
+### MCP Tool 생성 무한 대기 방지 (v0.2.3)
+
+- **LLM 요청 타임아웃**: MCP 스키마 생성 API 호출에 밀리초 단위 타임아웃을 적용했습니다.
+- **배치 분할 처리**: 많은 태스크를 한 번에 생성하지 않고 chunk 단위로 분할해 지연/실패 확률을 낮췄습니다.
+- **재시도 횟수 제한**: 실패 시 제한된 횟수만 재시도하고, 초과 시 즉시 fallback 스키마로 복구합니다.
+- **프런트 분석 요청 타임아웃**: 웹 대시보드 분석 요청도 120초 제한을 적용해 무한 로딩 상태를 차단합니다.
+
+### 라우팅 신뢰성 강화 (v0.2.4)
+
+- **임베딩 모델 자동 전환**: 기본 임베딩 모델이 미지원(404)일 때 후보 모델로 자동 전환합니다.
+- **Router 보호 가드**: 임베딩 fallback 비율이 임계값보다 높으면 Router를 비활성화합니다.
+- **Low-confidence 차단**: 신뢰도/모호성 기준 미달 시 `/api/route`는 409를 반환해 오탐 라우팅을 막습니다.
 
 ### HDBSCAN 기반 Agent 발견 (v0.2.1)
 
@@ -138,6 +164,7 @@ routing = pipeline.route_query("수출 통계 조회해줘")
 print(routing.target_agent_name)   # 예: "무역통계 분석 에이전트"
 print(routing.confidence)          # 예: 0.82
 print(routing.is_ambiguous)        # False
+print(routing.routing_probabilities)  # 예: {"agent_1": 0.71, "agent_0": 0.18, ...}
 ```
 
 ### MCP Tool 합성 계획
@@ -214,8 +241,8 @@ curl -X POST http://localhost:8000/api/route-and-compose \
 TAD-Agent Mapping/
 ├── tad_mapper/
 │   ├── engine/
-│   │   ├── feature_extractor.py   # 6D 위상 특징 벡터 추출 (Gemini)
-│   │   ├── tda_analyzer.py        # Mapper 알고리즘 + KMeans 클러스터링
+│   │   ├── feature_extractor.py   # 10D 위상 특징 벡터 추출 (Gemini)
+│   │   ├── tda_analyzer.py        # Mapper + HDBSCAN + Weighted 클러스터링
 │   │   ├── embedder.py            # 텍스트 임베딩 (768D) ★확장
 │   │   ├── query_manifold.py      # Query Manifold Q ⊆ ∪Ui (커버리지 계산 안정화)
 │   │   ├── homotopy_router.py     # 호모토피 라우팅 함수 Φ ★신규
@@ -247,6 +274,7 @@ TAD-Agent Mapping/
 │   ├── test_homotopy_router.py    # HomotopyRouter 테스트
 │   ├── test_query_manifold.py     # QueryManifold 테스트
 │   ├── test_tool_composer.py      # ToolComposer 정렬/그래프 테스트 ★신규
+│   ├── test_mcp_generator.py      # MCPGenerator 타임아웃/배치 테스트 ★신규
 │   ├── test_agent_namer.py        # AgentNamer ID 안정성 테스트 ★신규
 │   ├── test_embedder.py           # Embedder fallback 재현성 테스트 ★신규
 │   └── test_api_sessions.py       # API 세션 TTL/LRU 테스트 ★신규
@@ -267,7 +295,7 @@ TAD-Agent Mapping/
 | 파일 | 설명 |
 |------|------|
 | `report.md` | 분석 결과 Markdown 리포트 |
-| `result.json` | 구조화된 JSON 결과 |
+| `result.json` | 구조화된 JSON 결과 (10D `feature_space.task_features` 포함) |
 | `mapper_graph.html` | TDA Mapper 위상 그래프 (Plotly) |
 | `feature_radar.html` | Agent 특징 프로파일 레이더 차트 |
 | `query_manifold.html` | Query Manifold Q ⊆ ∪Ui 시각화 ★신규 |
@@ -310,15 +338,22 @@ task_001,태스크명,설명,user,입력1;입력2,출력1,,태그1;태그2
 | `GEMINI_API_KEY` | **필수** | Gemini API 키 (.gitignore 처리 필수) |
 | `GEMINI_MODEL` | `gemini-3-flash-preview` | LLM 모델 (Gemini 3.0 Flash) |
 | `EMBEDDING_MODEL` | `models/text-embedding-004` | 임베딩 모델 (768D) |
+| `EMBEDDING_MODEL_CANDIDATES` | `gemini-embedding-001,models/text-embedding-004,text-embedding-004` | 임베딩 모델 자동 전환 후보 |
 | `TDA_N_INTERVALS` | `10` | Mapper 구간 수 |
 | `TDA_OVERLAP_FRAC` | `0.3` | 구간 오버랩 비율 |
+| `TAD_MCP_TIMEOUT_MS` | `45000` | MCP Tool 생성 LLM 요청 타임아웃(ms) |
+| `TAD_MCP_BATCH_SIZE` | `12` | MCP Tool 생성 chunk 크기 |
+| `TAD_MCP_RETRIES` | `1` | MCP Tool 생성 실패 시 재시도 횟수 |
+| `ROUTER_MAX_FALLBACK_RATIO` | `0.2` | Router 허용 최대 임베딩 fallback 비율 |
+| `ROUTER_MIN_EMBED_CALLS` | `5` | fallback 비율 판단 최소 임베딩 호출 수 |
+| `ROUTE_MIN_CONFIDENCE` | `0.35` | 라우팅 성공으로 인정할 최소 confidence |
 
 ---
 
 ## 테스트
 
 ```bash
-# 전체 테스트 실행 (35개)
+# 전체 테스트 실행
 .venv/bin/python -m pytest tests/ -v
 
 # 모듈별 실행
@@ -329,4 +364,4 @@ task_001,태스크명,설명,user,입력1;입력2,출력1,,태그1;태그2
 
 ---
 
-*TAD-Mapper v0.2.2 · Powered by Gemini 3.0 · TDA (Topological Data Analysis) + 수학적 정식화*
+*TAD-Mapper v0.2.5 · Powered by Gemini 3.0 · TDA (Topological Data Analysis) + 수학적 정식화*

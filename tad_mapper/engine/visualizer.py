@@ -132,7 +132,8 @@ class TDAVisualizer:
         """Agent별 평균 특징 벡터 레이더 차트"""
         feature_names = [
             "데이터 유형", "추론 깊이", "자동화 가능성",
-            "상호작용", "출력 복잡도", "도메인 특화"
+            "상호작용", "출력 복잡도", "도메인 특화",
+            "시간 민감도", "데이터 규모", "보안 수준", "상태 의존성",
         ]
 
         fig = go.Figure()
@@ -145,10 +146,11 @@ class TDAVisualizer:
             avg_vec = np.mean([f.vector for f in agent_features], axis=0)
             color = AGENT_COLORS[i % len(AGENT_COLORS)]
             name = agent.suggested_name or f"Agent {i}"
+            dim_names = feature_names[: len(avg_vec)]
 
             fig.add_trace(go.Scatterpolar(
                 r=list(avg_vec) + [avg_vec[0]],
-                theta=feature_names + [feature_names[0]],
+                theta=dim_names + [dim_names[0]],
                 fill="toself",
                 fillcolor=color,
                 opacity=0.3,

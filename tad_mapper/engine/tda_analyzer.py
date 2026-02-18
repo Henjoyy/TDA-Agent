@@ -209,20 +209,22 @@ class TDAAnalyzer:
                 cluster_id=0,
                 task_ids=[f.task_id for f in features],
                 task_names=[f.task_name for f in features],
-                centroid=features[0].vector if features else np.zeros(6),
+                centroid=features[0].vector if features else np.zeros(10),
             )]
 
         matrix = np.stack([f.vector for f in features])
         scaler = StandardScaler()
         matrix_scaled = scaler.fit_transform(matrix)
+        weights = self._feature_weights(matrix_scaled.shape[1])
+        matrix_weighted = matrix_scaled * weights
 
         # n_agents가 명시적으로 지정된 경우 → KMeans 강제 사용
         if n_agents is not None:
             n_agents = min(n_agents, len(features))
             logger.info(f"Agent 자동 발견: KMeans {n_agents}개 클러스터 (사용자 지정)")
             kmeans = KMeans(n_clusters=n_agents, random_state=42, n_init=10)
-            labels = kmeans.fit_predict(matrix_scaled)
-            return self._build_agents_from_labels(features, matrix_scaled, labels)
+            labels = kmeans.fit_predict(matrix_weighted)
+            return self._build_agents_from_labels(features, matrix_weighted, labels)
 
         # ── HDBSCAN 자동 클러스터링 ──────────────────────────────────────────
         # min_cluster_size: 에이전트가 되려면 최소 몇 개 태스크가 필요한지
@@ -243,7 +245,7 @@ class TDAAnalyzer:
             cluster_selection_method="eom",  # Excess of Mass: 안정적인 클러스터 선택
             prediction_data=True,
         )
-        labels = clusterer.fit_predict(matrix_scaled)
+        labels = clusterer.fit_predict(matrix_weighted)
 
         n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
         n_noise = int((labels == -1).sum())
@@ -253,24 +255,24 @@ class TDAAnalyzer:
 
         # 클러스터가 1개 이하면 KMeans 폴백
         if n_clusters <= 1:
-            fallback_k = self._find_optimal_k(matrix_scaled)
+            fallback_k = self._find_optimal_k(matrix_weighted)
             logger.warning(
                 f"HDBSCAN 클러스터 수 부족 ({n_clusters}개). "
                 f"KMeans 폴백 (k={fallback_k})"
             )
             kmeans = KMeans(n_clusters=fallback_k, random_state=42, n_init=10)
-            labels = kmeans.fit_predict(matrix_scaled)
-            return self._build_agents_from_labels(features, matrix_scaled, labels)
+            labels = kmeans.fit_predict(matrix_weighted)
+            return self._build_agents_from_labels(features, matrix_weighted, labels)
 
         # ── 노이즈 태스크 재배정 ─────────────────────────────────────────────
         # HDBSCAN이 -1(노이즈)로 분류한 태스크를 가장 가까운 클러스터에 배정
         if n_noise > 0:
             labels = self._assign_noise_to_nearest(
-                matrix_scaled, labels, n_clusters
+                matrix_weighted, labels, n_clusters
             )
             logger.info(f"  → 노이즈 {n_noise}개 태스크를 인접 클러스터에 재배정 완료")
 
-        return self._build_agents_from_labels(features, matrix_scaled, labels)
+        return self._build_agents_from_labels(features, matrix_weighted, labels)
 
     @staticmethod
     def _assign_noise_to_nearest(
@@ -458,3 +460,19 @@ class TDAAnalyzer:
         optimal_k = list(k_range)[elbow_idx]
         logger.info(f"엘보우 방법 최적 k={optimal_k} (범위: 2~{max_k})")
         return optimal_k
+
+    @staticmethod
+    def _feature_weights(n_dims: int) -> np.ndarray:
+        """
+        weighted euclidean을 반영하기 위한 차원별 가중치.
+        - reasoning_depth(1), domain_specificity(5)를 강화
+        - data_volume(7)은 상대적으로 약하게 반영
+        """
+        w = np.ones(n_dims)
+        if n_dims > 1:
+            w[1] = 1.5
+        if n_dims > 5:
+            w[5] = 1.5
+        if n_dims > 7:
+            w[7] = 0.9
+        return w

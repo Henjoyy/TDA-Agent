@@ -559,6 +559,39 @@ body {
     border: 1px solid rgba(99, 102, 241, 0.2);
 }
 
+/* ── Agent Tools Section (inside agent card) ── */
+.agent-tools-section {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+}
+
+.agent-tools-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+}
+
+.agent-tools-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.agent-tool-chip {
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-family: 'Courier New', monospace;
+    font-weight: 600;
+    background: rgba(6, 182, 212, 0.1);
+    color: #67e8f9;
+    border: 1px solid rgba(6, 182, 212, 0.25);
+}
+
 /* ── Tools List ── */
 .tools-list {
     display: flex;
@@ -794,18 +827,20 @@ body {
         align-items: flex-start;
     }
 }
+
 /* ── Math Banner (수학적 정식화) ── */
 .math-banner {
     display: flex;
     align-items: center;
     gap: 16px;
-    background: linear-gradient(135deg, rgba(99,102,241,0.12), rgba(6,182,212,0.08));
-    border: 1px solid rgba(99,102,241,0.3);
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(6, 182, 212, 0.08));
+    border: 1px solid rgba(99, 102, 241, 0.3);
     border-radius: 10px;
     padding: 14px 20px;
     margin-bottom: 20px;
     flex-wrap: wrap;
 }
+
 .math-formula {
     font-family: 'Georgia', serif;
     font-size: 18px;
@@ -813,6 +848,7 @@ body {
     color: var(--primary-light);
     white-space: nowrap;
 }
+
 .math-desc {
     font-size: 13px;
     color: var(--text-muted);
@@ -825,6 +861,7 @@ body {
     border-radius: var(--radius);
     padding: 20px;
 }
+
 .coverage-header {
     display: flex;
     align-items: center;
@@ -833,15 +870,26 @@ body {
     flex-wrap: wrap;
     gap: 8px;
 }
-.coverage-status { font-size: 16px; font-weight: 700; }
+
+.coverage-status {
+    font-size: 16px;
+    font-weight: 700;
+}
+
 .coverage-badge {
     font-size: 12px;
     padding: 4px 10px;
     border-radius: 20px;
-    background: rgba(99,102,241,0.15);
+    background: rgba(99, 102, 241, 0.15);
     color: var(--primary-light);
 }
-.coverage-bars { display: flex; flex-direction: column; gap: 10px; }
+
+.coverage-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
 .coverage-bar-row {
     display: grid;
     grid-template-columns: 100px 1fr 52px;
@@ -850,58 +898,77 @@ body {
     font-size: 13px;
     color: var(--text-muted);
 }
+
 .bar-track {
     height: 8px;
-    background: rgba(255,255,255,0.08);
+    background: rgba(255, 255, 255, 0.08);
     border-radius: 4px;
     overflow: hidden;
 }
+
 .bar-fill {
     height: 100%;
     border-radius: 4px;
     transition: width 0.5s ease;
 }
+
 .tool-count-grid {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
     margin-top: 12px;
 }
+
 .tool-count-chip {
     display: flex;
     align-items: center;
     gap: 6px;
     padding: 4px 10px;
     border-radius: 20px;
-    background: rgba(99,102,241,0.12);
-    border: 1px solid rgba(99,102,241,0.25);
+    background: rgba(99, 102, 241, 0.12);
+    border: 1px solid rgba(99, 102, 241, 0.25);
     font-size: 12px;
     color: var(--text);
 }
+
 .tool-count-chip.overloaded {
-    background: rgba(239,68,68,0.15);
-    border-color: rgba(239,68,68,0.4);
+    background: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.4);
     color: #fca5a5;
 }
+
 .chip-cnt {
     font-weight: 700;
     font-size: 13px;
     color: var(--primary-light);
 }
-.tool-count-chip.overloaded .chip-cnt { color: #f87171; }
+
+.tool-count-chip.overloaded .chip-cnt {
+    color: #f87171;
+}
+
 .rebalance-badge {
     margin-top: 12px;
     padding: 8px 14px;
     border-radius: 8px;
-    background: rgba(16,185,129,0.1);
-    border: 1px solid rgba(16,185,129,0.3);
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.3);
     font-size: 13px;
     color: #6ee7b7;
 }
 
 /* ── Router Panel ── */
-.router-panel { display: flex; flex-direction: column; gap: 16px; }
-.router-input-row { display: flex; gap: 12px; }
+.router-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.router-input-row {
+    display: flex;
+    gap: 12px;
+}
+
 .router-input {
     flex: 1;
     background: var(--surface);
@@ -914,86 +981,125 @@ body {
     outline: none;
     transition: border-color 0.2s;
 }
-.router-input:focus { border-color: var(--primary); }
-.routing-loading { padding: 20px; color: var(--text-muted); text-align: center; }
+
+.router-input:focus {
+    border-color: var(--primary);
+}
+
+.routing-loading {
+    padding: 20px;
+    color: var(--text-muted);
+    text-align: center;
+}
+
 .routing-card {
     background: var(--surface);
-    border: 1px solid rgba(99,102,241,0.3);
+    border: 1px solid rgba(99, 102, 241, 0.3);
     border-radius: 12px;
     padding: 20px;
 }
+
 .routing-query {
     font-size: 15px;
     font-style: italic;
     color: var(--text-muted);
     margin-bottom: 10px;
 }
+
 .routing-arrow {
     font-size: 13px;
     color: var(--primary-light);
     margin-bottom: 10px;
     font-family: 'Georgia', serif;
 }
+
 .routing-target {
     display: flex;
     align-items: center;
     gap: 12px;
     margin-bottom: 8px;
 }
+
 .routing-agent {
     font-size: 18px;
     font-weight: 700;
     color: var(--text);
 }
-.routing-conf { font-size: 14px; font-weight: 600; }
-.routing-class { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
+
+.routing-conf {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.routing-class {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+
 .routing-class code {
-    background: rgba(99,102,241,0.15);
+    background: rgba(99, 102, 241, 0.15);
     padding: 2px 6px;
     border-radius: 4px;
     font-size: 11px;
 }
-.routing-alts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
+.routing-alts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+
 .alt-chip {
     font-size: 12px;
     padding: 3px 10px;
     border-radius: 20px;
-    background: rgba(255,255,255,0.06);
+    background: rgba(255, 255, 255, 0.06);
     color: var(--text-muted);
 }
+
 .ambiguous-badge {
     display: inline-block;
     margin-top: 6px;
     font-size: 12px;
     padding: 4px 10px;
     border-radius: 6px;
-    background: rgba(245,158,11,0.15);
+    background: rgba(245, 158, 11, 0.15);
     color: #fcd34d;
 }
 
 /* ── Composition Panel ── */
 .compose-card {
     background: var(--surface);
-    border: 1px solid rgba(6,182,212,0.25);
+    border: 1px solid rgba(6, 182, 212, 0.25);
     border-radius: 12px;
     padding: 20px;
 }
+
 .compose-formula {
     font-family: 'Georgia', serif;
     font-size: 15px;
     color: var(--accent);
     margin-bottom: 20px;
 }
-.compose-steps { display: flex; flex-direction: column; gap: 0; }
+
+.compose-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
 .compose-step {
     display: flex;
     gap: 16px;
     align-items: flex-start;
     padding: 12px;
-    background: rgba(6,182,212,0.06);
-    border: 1px solid rgba(6,182,212,0.15);
+    background: rgba(6, 182, 212, 0.06);
+    border: 1px solid rgba(6, 182, 212, 0.15);
     border-radius: 8px;
 }
+
 .compose-arrow {
     text-align: center;
     color: var(--accent);
@@ -1001,6 +1107,7 @@ body {
     padding: 4px;
     font-family: 'Georgia', serif;
 }
+
 .compose-order {
     font-family: 'Georgia', serif;
     font-size: 15px;
@@ -1008,21 +1115,38 @@ body {
     min-width: 48px;
     font-weight: 600;
 }
-.compose-tool { font-weight: 600; font-size: 14px; color: var(--text); margin-bottom: 4px; }
-.compose-rationale { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
-.compose-flow { font-size: 11px; color: rgba(6,182,212,0.7); }
+
+.compose-tool {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text);
+    margin-bottom: 4px;
+}
+
+.compose-rationale {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+}
+
+.compose-flow {
+    font-size: 11px;
+    color: rgba(6, 182, 212, 0.7);
+}
+
 .compose-output {
     margin-top: 16px;
     padding: 10px 14px;
-    background: rgba(16,185,129,0.08);
+    background: rgba(16, 185, 129, 0.08);
     border-radius: 8px;
     font-size: 13px;
     color: #6ee7b7;
 }
+
 .compose-error {
     margin-top: 10px;
     padding: 8px 14px;
-    background: rgba(239,68,68,0.1);
+    background: rgba(239, 68, 68, 0.1);
     border-radius: 8px;
     font-size: 13px;
     color: #fca5a5;

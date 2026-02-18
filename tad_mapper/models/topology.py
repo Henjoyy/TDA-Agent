@@ -126,6 +126,10 @@ class RoutingResult(BaseModel):
     homotopy_class_id: str
     confidence: float = Field(..., ge=0.0, le=1.0, description="라우팅 신뢰도")
     top_similarity: float = Field(..., ge=0.0, le=1.0)
+    routing_probabilities: dict[str, float] = Field(
+        default_factory=dict,
+        description="soft routing 확률 분포 (agent_id -> probability)",
+    )
     alternatives: list[RoutingCandidate] = Field(
         default_factory=list, description="Top-2~3 대안 Agent"
     )

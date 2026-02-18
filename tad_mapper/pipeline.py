@@ -20,7 +20,14 @@ from pathlib import Path
 
 import numpy as np
 
-from config.settings import TDA_N_INTERVALS, TDA_OVERLAP_FRAC, OUTPUT_DIR, validate_config
+from config.settings import (
+    OUTPUT_DIR,
+    ROUTER_MAX_FALLBACK_RATIO,
+    ROUTER_MIN_EMBED_CALLS,
+    TDA_N_INTERVALS,
+    TDA_OVERLAP_FRAC,
+    validate_config,
+)
 from tad_mapper.engine.embedder import Embedder
 from tad_mapper.engine.feature_extractor import FeatureExtractor, TopologicalFeature
 from tad_mapper.engine.homotopy_router import HomotopyRouter
@@ -63,6 +70,8 @@ class PipelineResult:
     task_embeddings: object = None               # np.ndarray | None
     coverage_metrics: CoverageMetrics | None = None
     balance_report: BalanceReport | None = None
+    embedding_health: dict = field(default_factory=dict)
+    router_block_reason: str = ""
 
     def summary(self) -> str:
         lines = [
@@ -80,6 +89,15 @@ class PipelineResult:
             )
         if self.balance_report:
             lines.append(f"Tool 균형: {self.balance_report.summary}")
+        if self.embedding_health:
+            lines.append(
+                f"임베딩 상태: model={self.embedding_health.get('active_model')} "
+                f"| fallback={self.embedding_health.get('fallback_calls', 0)}/"
+                f"{self.embedding_health.get('total_calls', 0)} "
+                f"({self.embedding_health.get('fallback_ratio', 0.0):.1%})"
+            )
+        if self.router_block_reason:
+            lines.append(f"Router 상태: 비활성화 ({self.router_block_reason})")
         return "\n".join(lines)
 
 
@@ -89,7 +107,7 @@ class TADMapperPipeline:
 
     실행 순서:
     1.   입력 파싱 (JSON/CSV → UserJourney)
-    2.   특징 추출 (Gemini LLM → 6D 벡터)
+    2.   특징 추출 (Gemini LLM → 10D 벡터)
     3.   TDA Mapper 분석 (위상 그래프 생성)
     4.   Agent 자동 발견 (KMeans 클러스터링)
     5.   Agent 명명 (Gemini LLM → 이름/역할)
@@ -130,12 +148,15 @@ class TADMapperPipeline:
         self._router: HomotopyRouter | None = None
         self._manifold: QueryManifold | None = None
         self._result: PipelineResult | None = None
+        self._router_block_reason: str = ""
 
     # ── 메인 파이프라인 ──────────────────────────────────────────────────────
 
     def run(self, input_path: str | Path) -> PipelineResult:
         """파이프라인 전체 실행"""
         logger.info(f"=== TAD-Mapper 파이프라인 시작: {input_path} ===")
+        self._router_block_reason = ""
+        self._embedder.reset_health_stats()
 
         # 1. 입력 파싱
         logger.info("[1/11] 입력 파싱 중...")
@@ -201,7 +222,7 @@ class TADMapperPipeline:
             journey.title, agents, mcp_tools, holes, overlaps, len(journey.steps)
         )
         report_json = self._report_gen.generate_json(
-            journey.title, agents, mcp_tools, holes, overlaps
+            journey.title, agents, mcp_tools, holes, overlaps, features=features
         )
 
         out_dir = OUTPUT_DIR / journey.id
@@ -224,7 +245,9 @@ class TADMapperPipeline:
             task_embeddings = self._embedder.embed_tasks(journey.steps)
             logger.info(f"  → 임베딩 완료: shape={task_embeddings.shape}")
         except Exception as e:
-            logger.warning(f"  → 임베딩 생성 실패: {e}. 6D 벡터로 대체됩니다.")
+            logger.warning(f"  → 임베딩 생성 실패: {e}. 10D 벡터로 대체됩니다.")
+        embedding_health = self._embedder.get_health_dict()
+        logger.info("  → 임베딩 건강도: %s", embedding_health)
 
         # 10. Query Manifold 구축 + 커버리지 분석 [신규]
         logger.info("[10/11] Query Manifold 구축 중 (Q ⊆ ∪Ui)...")
@@ -248,16 +271,24 @@ class TADMapperPipeline:
 
         # 11. Homotopy Router 초기화 [신규]
         logger.info("[11/11] Homotopy Router 초기화 중 (Φ: Q → {Uk})...")
-        self._router = HomotopyRouter(self._embedder)
-        try:
-            self._router.build(agents, manifold=self._manifold)
-            logger.info(
-                f"  → Router 준비 완료: "
-                f"{len(self._router.homotopy_classes)}개 호모토피 클래스"
-            )
-        except Exception as e:
-            logger.warning(f"  → Router 초기화 실패: {e}")
+        self._router_block_reason = self._evaluate_router_block_reason(
+            embedding_health
+        )
+        if self._router_block_reason:
+            logger.error("  → Router 비활성화: %s", self._router_block_reason)
             self._router = None
+        else:
+            self._router = HomotopyRouter(self._embedder)
+            try:
+                self._router.build(agents, manifold=self._manifold)
+                logger.info(
+                    f"  → Router 준비 완료: "
+                    f"{len(self._router.homotopy_classes)}개 호모토피 클래스"
+                )
+            except Exception as e:
+                self._router_block_reason = f"Router 초기화 실패: {e}"
+                logger.warning(f"  → {self._router_block_reason}")
+                self._router = None
 
         logger.info(f"=== 완료! 결과 저장: {out_dir} ===")
 
@@ -274,6 +305,8 @@ class TADMapperPipeline:
             task_embeddings=task_embeddings,
             coverage_metrics=coverage_metrics,
             balance_report=balance_report,
+            embedding_health=embedding_health,
+            router_block_reason=self._router_block_reason,
         )
         logger.info("\n%s", self._result.summary())
         return self._result
@@ -330,3 +363,27 @@ class TADMapperPipeline:
     @property
     def manifold(self) -> QueryManifold | None:
         return self._manifold
+
+    @property
+    def router_block_reason(self) -> str:
+        return self._router_block_reason
+
+    @staticmethod
+    def _evaluate_router_block_reason(embedding_health: dict) -> str:
+        model_available = bool(embedding_health.get("model_available", True))
+        if not model_available:
+            model_name = embedding_health.get("active_model", "")
+            reason = embedding_health.get("model_validation_error") or "unknown"
+            return f"임베딩 모델 사용 불가({model_name}): {reason}"
+
+        total_calls = int(embedding_health.get("total_calls", 0))
+        fallback_ratio = float(embedding_health.get("fallback_ratio", 0.0))
+        if (
+            total_calls >= ROUTER_MIN_EMBED_CALLS
+            and fallback_ratio > ROUTER_MAX_FALLBACK_RATIO
+        ):
+            return (
+                f"임베딩 fallback 비율 과다({fallback_ratio:.1%}) "
+                f"- 임계값 {ROUTER_MAX_FALLBACK_RATIO:.1%} 초과"
+            )
+        return ""

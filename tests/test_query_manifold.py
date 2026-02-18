@@ -24,11 +24,11 @@ from tad_mapper.models.topology import CoverageMetrics, CoverageRegion
 # ── 픽스처 ───────────────────────────────────────────────────────────────────
 
 def make_features(n: int = 6) -> list[TopologicalFeature]:
-    """n개의 더미 6D 특징 벡터"""
+    """n개의 더미 10D 특징 벡터"""
     np.random.seed(42)
     feats = []
     for i in range(n):
-        vec = np.clip(np.random.rand(6), 0.0, 1.0)
+        vec = np.clip(np.random.rand(10), 0.0, 1.0)
         feats.append(TopologicalFeature(
             task_id=f"t{i}",
             task_name=f"태스크 {i}",
@@ -38,6 +38,10 @@ def make_features(n: int = 6) -> list[TopologicalFeature]:
             interaction_type=float(vec[3]),
             output_complexity=float(vec[4]),
             domain_specificity=float(vec[5]),
+            temporal_sensitivity=float(vec[6]),
+            data_volume=float(vec[7]),
+            security_level=float(vec[8]),
+            state_dependency=float(vec[9]),
         ))
     return feats
 
@@ -53,7 +57,7 @@ def make_agents(n_agents: int = 3) -> list[DiscoveredAgent]:
             cluster_id=i,
             task_ids=task_ids,
             task_names=[f"태스크 {j}" for j in range(i * tasks_per_agent, (i + 1) * tasks_per_agent)],
-            centroid=np.random.rand(6),
+            centroid=np.random.rand(10),
             suggested_name=f"에이전트 {i}",
             suggested_role=f"역할 {i}",
         ))
@@ -70,7 +74,7 @@ def make_mock_embedder() -> Embedder:
     def embed_agent_profile(name, role, tasks):
         np.random.seed(call_count[0])
         call_count[0] += 1
-        return np.random.rand(6)
+        return np.random.rand(10)
 
     embedder.embed_agent_profile.side_effect = embed_agent_profile
     return embedder
@@ -86,21 +90,21 @@ class TestQueryManifoldBuild:
         agents = make_agents(3)
         embedder = make_mock_embedder()
 
-        # task_embeddings로 6D 특징 벡터 사용 (임베딩 API 불필요)
+        # task_embeddings로 10D 특징 벡터 사용 (임베딩 API 불필요)
         task_embeddings = np.stack([f.vector for f in features])
         manifold.build(agents, features, embedder, task_embeddings)
 
         assert len(manifold.regions) == 3
 
     def test_build_without_embeddings(self):
-        """task_embeddings=None이면 6D 특징 벡터로 대체"""
+        """task_embeddings=None이면 10D 특징 벡터로 대체"""
         manifold = QueryManifold()
         features = make_features(6)
         agents = make_agents(3)
         embedder = make_mock_embedder()
 
         manifold.build(agents, features, embedder, task_embeddings=None)
-        # 6D 벡터로 폴백하면 region 수는 줄어들 수 있음
+        # 10D 벡터로 폴백하면 region 수는 줄어들 수 있음
         assert len(manifold.regions) > 0
 
     def test_projected_2d_shape(self):
@@ -183,7 +187,7 @@ class TestFindNearestRegion:
 
     def test_returns_coverage_region(self):
         """find_nearest_region() 반환값이 CoverageRegion"""
-        query_emb = np.random.rand(6)
+        query_emb = np.random.rand(10)
         region = self.manifold.find_nearest_region(query_emb)
         assert region is None or isinstance(region, CoverageRegion)
 
@@ -203,5 +207,5 @@ class TestFindNearestRegion:
     def test_empty_manifold_returns_none(self):
         """빈 Manifold → None"""
         empty = QueryManifold()
-        result = empty.find_nearest_region(np.zeros(6))
+        result = empty.find_nearest_region(np.zeros(10))
         assert result is None

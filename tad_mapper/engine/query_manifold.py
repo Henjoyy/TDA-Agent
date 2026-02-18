@@ -54,7 +54,7 @@ class QueryManifold:
 
         Args:
             agents: 발견된 Unit Agent 목록
-            features: 6D 위상 특징 벡터 목록
+            features: 10D 위상 특징 벡터 목록
             embedder: 임베딩 생성기
             task_embeddings: 미리 계산된 태스크 임베딩 (없으면 features 기반으로 대체)
         """
@@ -74,15 +74,15 @@ class QueryManifold:
         if task_embeddings is not None and len(task_embeddings) == len(features):
             self._task_embeddings = np.asarray(task_embeddings)
         else:
-            # 6D 특징 벡터를 대용으로 사용 (임베딩 미생성 시 폴백)
+            # 10D 특징 벡터를 대용으로 사용 (임베딩 미생성 시 폴백)
             if task_embeddings is not None and len(task_embeddings) != len(features):
                 logger.warning(
-                    "임베딩 개수(%s)와 태스크 개수(%s)가 달라 6D 특징 벡터로 대체합니다.",
+                    "임베딩 개수(%s)와 태스크 개수(%s)가 달라 10D 특징 벡터로 대체합니다.",
                     len(task_embeddings),
                     len(features),
                 )
             else:
-                logger.warning("태스크 임베딩 없음 — 6D 특징 벡터로 대체합니다.")
+                logger.warning("태스크 임베딩 없음 — 10D 특징 벡터로 대체합니다.")
             self._task_embeddings = np.stack([f.vector for f in features])
 
         # 2D PCA 투영 (Voronoi + 시각화용)

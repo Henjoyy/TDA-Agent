@@ -28,9 +28,9 @@ def make_mock_embedder(query_vec: np.ndarray | None = None) -> Embedder:
 
     # 에이전트 프로파일 임베딩: 각 에이전트마다 고정 벡터
     agent_vecs = {
-        "agent_0": np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0]),  # 검색 방향
-        "agent_1": np.array([0.0, 1.0, 0.0, 0.0, 0.0, 0.0]),  # 분석 방향
-        "agent_2": np.array([0.0, 0.0, 1.0, 0.0, 0.0, 0.0]),  # 생성 방향
+        "agent_0": np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),  # 검색 방향
+        "agent_1": np.array([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),  # 분석 방향
+        "agent_2": np.array([0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),  # 생성 방향
     }
 
     def embed_agent_profile(agent_name, agent_role, task_names):
@@ -38,7 +38,7 @@ def make_mock_embedder(query_vec: np.ndarray | None = None) -> Embedder:
         for aid, vec in agent_vecs.items():
             if aid in agent_name.lower() or agent_name.lower() in aid:
                 return vec
-        return np.random.rand(6)
+        return np.random.rand(10)
 
     embedder.embed_agent_profile.side_effect = embed_agent_profile
 
@@ -46,7 +46,7 @@ def make_mock_embedder(query_vec: np.ndarray | None = None) -> Embedder:
     if query_vec is not None:
         embedder.embed_query.return_value = query_vec
     else:
-        embedder.embed_query.return_value = np.array([0.9, 0.1, 0.0, 0.0, 0.0, 0.0])
+        embedder.embed_query.return_value = np.array([0.9, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 
     # cosine_similarity는 실제 함수 사용
     embedder.cosine_similarity = Embedder.cosine_similarity
@@ -61,7 +61,7 @@ def make_agents() -> list[DiscoveredAgent]:
             cluster_id=0,
             task_ids=["t1", "t2"],
             task_names=["데이터 검색", "정보 조회"],
-            centroid=np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+            centroid=np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
             suggested_name="agent_0 검색 에이전트",
             suggested_role="데이터 검색 및 조회",
         ),
@@ -70,7 +70,7 @@ def make_agents() -> list[DiscoveredAgent]:
             cluster_id=1,
             task_ids=["t3", "t4"],
             task_names=["통계 분석", "트렌드 분석"],
-            centroid=np.array([0.0, 1.0, 0.0, 0.0, 0.0, 0.0]),
+            centroid=np.array([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
             suggested_name="agent_1 분석 에이전트",
             suggested_role="통계 분석 및 집계",
         ),
@@ -79,7 +79,7 @@ def make_agents() -> list[DiscoveredAgent]:
             cluster_id=2,
             task_ids=["t5"],
             task_names=["보고서 생성"],
-            centroid=np.array([0.0, 0.0, 1.0, 0.0, 0.0, 0.0]),
+            centroid=np.array([0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
             suggested_name="agent_2 생성 에이전트",
             suggested_role="문서 및 보고서 생성",
         ),
@@ -120,7 +120,7 @@ class TestRouting:
     def test_route_returns_routing_result(self):
         """route() 반환값이 RoutingResult 타입"""
         # 쿼리가 agent_0 방향 (검색 에이전트)
-        query_vec = np.array([0.95, 0.05, 0.0, 0.0, 0.0, 0.0])
+        query_vec = np.array([0.95, 0.05, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         embedder = make_mock_embedder(query_vec)
         router = HomotopyRouter(embedder)
         router.build(make_agents())
@@ -131,7 +131,7 @@ class TestRouting:
     def test_similar_queries_same_agent(self):
         """유사한 의미의 쿼리가 같은 Agent로 라우팅"""
         # 두 쿼리 모두 agent_0 방향
-        query_vec = np.array([0.95, 0.05, 0.0, 0.0, 0.0, 0.0])
+        query_vec = np.array([0.95, 0.05, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         embedder = make_mock_embedder(query_vec)
         router = HomotopyRouter(embedder)
         router.build(make_agents())
@@ -168,12 +168,30 @@ class TestRouting:
         with pytest.raises(RuntimeError):
             router.route("쿼리")
 
+    def test_route_includes_probabilities(self):
+        """route() 결과에 agent별 확률 분포 포함"""
+        embedder = make_mock_embedder()
+        router = HomotopyRouter(embedder)
+        router.build(make_agents())
+        result = router.route("분석해줘")
+        assert set(result.routing_probabilities) == {"agent_0", "agent_1", "agent_2"}
+        assert sum(result.routing_probabilities.values()) == pytest.approx(1.0, abs=1e-6)
+
+    def test_route_soft_distribution(self):
+        """route_soft()는 확률 분포를 반환해야 함"""
+        embedder = make_mock_embedder()
+        router = HomotopyRouter(embedder)
+        router.build(make_agents())
+        probs = router.route_soft("데이터 검색해줘")
+        assert set(probs) == {"agent_0", "agent_1", "agent_2"}
+        assert sum(probs.values()) == pytest.approx(1.0, abs=1e-6)
+
 
 class TestAmbiguity:
     def test_high_confidence_not_ambiguous(self):
         """명확한 쿼리 (agent_0 방향) → is_ambiguous == False"""
         # 매우 강한 신호: [1, 0, 0, ...]
-        query_vec = np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        query_vec = np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         embedder = make_mock_embedder(query_vec)
         router = HomotopyRouter(embedder)
         router.build(make_agents())
@@ -184,7 +202,7 @@ class TestAmbiguity:
     def test_ambiguous_query_detected(self):
         """두 Agent와 유사도가 비슷한 쿼리 → is_ambiguous 가능"""
         # agent_0와 agent_1 사이의 쿼리
-        query_vec = np.array([0.707, 0.707, 0.0, 0.0, 0.0, 0.0])
+        query_vec = np.array([0.707, 0.707, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         query_vec = query_vec / np.linalg.norm(query_vec)
         embedder = make_mock_embedder(query_vec)
         router = HomotopyRouter(embedder)
@@ -201,7 +219,7 @@ class TestClassify:
         router = HomotopyRouter(embedder)
         router.build(make_agents())
 
-        query_vec = np.array([0.9, 0.1, 0.0, 0.0, 0.0, 0.0])
+        query_vec = np.array([0.9, 0.1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         hc = router.classify(query_vec)
         assert isinstance(hc, HomotopyClass)
         assert hc.agent_id == "agent_0"  # agent_0 방향
@@ -210,5 +228,5 @@ class TestClassify:
         """빈 router의 classify() → None"""
         embedder = make_mock_embedder()
         router = HomotopyRouter(embedder)
-        result = router.classify(np.zeros(6))
+        result = router.classify(np.zeros(10))
         assert result is None

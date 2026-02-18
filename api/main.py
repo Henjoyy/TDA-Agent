@@ -23,7 +23,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from config.settings import OUTPUT_DIR, GEMINI_MODEL
+from config.settings import OUTPUT_DIR, GEMINI_MODEL, ROUTE_MIN_CONFIDENCE
 from tad_mapper.pipeline import PipelineResult, TADMapperPipeline
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(name)s | %(message)s")
@@ -35,7 +35,7 @@ app = FastAPI(
         "AI 적용 기회를 Unit Agent와 MCP Tool로 자동 변환하는 시스템. "
         "수학적 정식화: Q ⊆ ∪Ui, Φ: Q → {Uk}, y = (t_π(m) ∘ ... ∘ t_π(1))(x)"
     ),
-    version="0.2.2",
+    version="0.2.4",
 )
 
 app.add_middleware(
@@ -223,6 +223,8 @@ async def analyze(
             "coverage": coverage_summary,
             "tool_balance": balance_summary,
             "router_ready": pipeline.router is not None and pipeline.router.is_ready,
+            "router_block_reason": pipeline.router_block_reason,
+            "embedding_health": result.embedding_health,
             "result": result.report_json,
             "output_id": output_id,
             "files": {
@@ -263,13 +265,32 @@ async def route_query(req: RouteRequest):
 
     pipeline, _ = session
     if pipeline.router is None or not pipeline.router.is_ready:
+        reason = pipeline.router_block_reason or "Homotopy Router가 준비되지 않았습니다."
         raise HTTPException(
             status_code=503,
-            detail="Homotopy Router가 준비되지 않았습니다. 분석을 다시 실행하세요."
+            detail=(
+                f"{reason} 분석을 다시 실행하세요."
+                if "분석" not in reason else reason
+            ),
         )
 
     try:
         routing = pipeline.route_query(req.query)
+        if routing.confidence < ROUTE_MIN_CONFIDENCE or routing.is_ambiguous:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": (
+                        "라우팅 신뢰도가 낮거나 모호합니다. "
+                        "분석을 다시 실행하거나 쿼리를 구체화하세요."
+                    ),
+                    "confidence": round(routing.confidence, 4),
+                    "threshold": ROUTE_MIN_CONFIDENCE,
+                    "is_ambiguous": routing.is_ambiguous,
+                    "ambiguity_reason": routing.ambiguity_reason,
+                    "alternatives": [a.model_dump() for a in routing.alternatives],
+                },
+            )
         return {
             "status": "success",
             "routing": routing.to_dict(),
@@ -282,6 +303,8 @@ async def route_query(req: RouteRequest):
                 ),
             },
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception(f"라우팅 실패: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -385,6 +408,20 @@ async def route_and_compose(req: RouteAndComposeRequest):
 
     try:
         routing, composition = pipeline.route_and_compose(req.query)
+        if routing.confidence < ROUTE_MIN_CONFIDENCE or routing.is_ambiguous:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": (
+                        "라우팅 신뢰도가 낮거나 모호하여 합성 계획 생성을 중단했습니다."
+                    ),
+                    "confidence": round(routing.confidence, 4),
+                    "threshold": ROUTE_MIN_CONFIDENCE,
+                    "is_ambiguous": routing.is_ambiguous,
+                    "ambiguity_reason": routing.ambiguity_reason,
+                    "alternatives": [a.model_dump() for a in routing.alternatives],
+                },
+            )
         return {
             "status": "success",
             "query": req.query,
@@ -397,6 +434,8 @@ async def route_and_compose(req: RouteAndComposeRequest):
                 "is_ambiguous": routing.is_ambiguous,
             },
         }
+    except HTTPException:
+        raise
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
@@ -431,11 +470,13 @@ async def get_sample():
 async def health():
     return {
         "status": "ok",
-        "version": "0.2.2",
+        "version": "0.2.4",
         "features": [
             "hdbscan_clustering",
             "query_manifold",
             "homotopy_routing",
+            "routing_confidence_guard",
+            "embedding_model_auto_switch",
             "tool_composition",
             "agile_tool_balancing",
             "god_agent_prevention",

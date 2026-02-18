@@ -8,6 +8,7 @@ const AGENT_COLORS = [
 let selectedFile = null;
 let currentResult = null;
 let currentOutputId = null;  // 세션 ID (라우팅/합성 API용)
+const ANALYZE_TIMEOUT_MS = 120000;
 
 // ── File Upload ──────────────────────────────────────────────
 const uploadArea = document.getElementById('uploadArea');
@@ -60,11 +61,19 @@ async function runAnalysis() {
   const nAgents = document.getElementById('nAgents').value;
   if (nAgents) formData.append('n_agents', nAgents);
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ANALYZE_TIMEOUT_MS);
+
   try {
-    const res = await fetch('/api/analyze', { method: 'POST', body: formData });
+    const res = await fetch('/api/analyze', {
+      method: 'POST',
+      body: formData,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
     if (!res.ok) {
       const err = await res.json();
-      throw new Error(err.detail || '분석 실패');
+      throw new Error(extractErrorMessage(err, '분석 실패'));
     }
     const data = await res.json();
     currentResult = data;
@@ -72,8 +81,13 @@ async function runAnalysis() {
     showLoading(false);
     renderResults(data);
   } catch (e) {
+    clearTimeout(timeoutId);
     showLoading(false);
-    alert(`오류: ${e.message}`);
+    if (e.name === 'AbortError') {
+      alert(`오류: 분석 요청 시간(${ANALYZE_TIMEOUT_MS / 1000}초)을 초과했습니다. 태스크 수를 줄이거나 다시 시도해주세요.`);
+    } else {
+      alert(`오류: ${e.message}`);
+    }
   }
 }
 
@@ -251,7 +265,7 @@ async function routeQuery() {
     });
     if (!res.ok) {
       const err = await res.json();
-      throw new Error(err.detail || '라우팅 실패');
+      throw new Error(extractErrorMessage(err, '라우팅 실패'));
     }
     const data = await res.json();
     renderRoutingResult(data, query);
@@ -303,7 +317,7 @@ async function composeTools(agentId, query) {
     });
     if (!res.ok) {
       const err = await res.json();
-      throw new Error(err.detail || '합성 실패');
+      throw new Error(extractErrorMessage(err, '합성 실패'));
     }
     const data = await res.json();
     renderCompositionResult(data);
@@ -469,4 +483,15 @@ function switchTab(name, btn) {
 // ── Utils ────────────────────────────────────────────────────
 function escapeHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function extractErrorMessage(err, fallback) {
+  if (!err) return fallback;
+  if (typeof err.detail === 'string') return err.detail;
+  if (err.detail && typeof err.detail === 'object') {
+    if (typeof err.detail.message === 'string') return err.detail.message;
+    return JSON.stringify(err.detail);
+  }
+  if (typeof err.message === 'string') return err.message;
+  return fallback;
 }

@@ -33,6 +33,8 @@ logger = logging.getLogger(__name__)
 AMBIGUITY_THRESHOLD = 0.1
 # 라우팅 최소 신뢰도: 이 값 미만이면 "unknown" 처리
 MIN_CONFIDENCE = 0.3
+SOFTMAX_TEMPERATURE = 0.2
+RADIUS_MARGIN = 0.05
 
 
 class HomotopyRouter:
@@ -85,14 +87,22 @@ class HomotopyRouter:
                 )
                 if region and region.centroid_embedding:
                     centroid_emb = np.array(region.centroid_embedding)
+                    radius = self._adaptive_radius(
+                        centroid_emb,
+                        [np.array(v) for v in region.task_embeddings],
+                        margin=RADIUS_MARGIN,
+                        fallback=region.radius if region.radius > 0 else 0.3,
+                    )
                 else:
                     centroid_emb = self._embedder.embed_agent_profile(
                         agent_name, agent_role, agent.task_names
                     )
+                    radius = 0.3
             else:
                 centroid_emb = self._embedder.embed_agent_profile(
                     agent_name, agent_role, agent.task_names
                 )
+                radius = 0.3
 
             # 호모토피 클래스 생성
             homotopy_class = HomotopyClass(
@@ -104,7 +114,7 @@ class HomotopyRouter:
                     f"처리 태스크: {', '.join(agent.task_names[:5])}"
                 ),
                 centroid_embedding=centroid_emb.tolist(),
-                radius=0.3,  # 기본 반경
+                radius=radius,
             )
             self._homotopy_classes.append(homotopy_class)
 
@@ -154,9 +164,12 @@ class HomotopyRouter:
 
         # 3. Top-1 = 라우팅 대상
         best_class, best_sim = similarities[0]
+        routing_probs = self._softmax_probabilities(
+            query_embedding, temperature=SOFTMAX_TEMPERATURE
+        )
 
         # 4. confidence = Top-1과 Top-2의 마진 기반
-        confidence = self._compute_confidence(similarities)
+        confidence = self._compute_confidence(similarities, best_class, best_sim)
 
         # 5. 호모토피 클래스 할당
         query_point.homotopy_class_id = best_class.class_id
@@ -184,6 +197,7 @@ class HomotopyRouter:
             homotopy_class_id=best_class.class_id,
             confidence=confidence,
             top_similarity=float(best_sim),
+            routing_probabilities=routing_probs,
             alternatives=alternatives,
             is_ambiguous=is_ambiguous,
             ambiguity_reason=ambiguity_reason,
@@ -194,6 +208,20 @@ class HomotopyRouter:
             f"→ {best_class.agent_name} (신뢰도: {confidence:.2f})"
         )
         return result
+
+    def route_soft(
+        self, query_text: str, temperature: float = SOFTMAX_TEMPERATURE
+    ) -> dict[str, float]:
+        """
+        확률적 soft routing.
+        P(U_k|x) = softmax(sim(x, c_k) / tau)
+        """
+        if not self._ready or not self._homotopy_classes:
+            raise RuntimeError(
+                "HomotopyRouter가 초기화되지 않았습니다. build()를 먼저 호출하세요."
+            )
+        query_embedding = self._embedder.embed_query(query_text)
+        return self._softmax_probabilities(query_embedding, temperature=temperature)
 
     def classify(self, query_embedding: np.ndarray) -> HomotopyClass | None:
         """
@@ -222,6 +250,8 @@ class HomotopyRouter:
     def _compute_confidence(
         self,
         similarities: list[tuple[HomotopyClass, float]],
+        best_class: HomotopyClass,
+        best_sim: float,
     ) -> float:
         """
         라우팅 신뢰도 계산.
@@ -230,7 +260,7 @@ class HomotopyRouter:
         마진이 클수록 top1이 압도적으로 적합 → 높은 신뢰도
         """
         if len(similarities) < 2:
-            return float(np.clip(similarities[0][1], 0.0, 1.0)) if similarities else 0.0
+            return float(np.clip(best_sim, 0.0, 1.0)) if similarities else 0.0
 
         top1_sim = similarities[0][1]
         top2_sim = similarities[1][1]
@@ -240,9 +270,52 @@ class HomotopyRouter:
 
         # 마진 기반 신뢰도
         margin = (top1_sim - top2_sim) / (top1_sim + 1e-8)
-        # 절대 유사도 보정 (낮은 유사도 자체도 신뢰도 저하)
-        confidence = margin * np.clip(top1_sim, 0.0, 1.0)
+        margin_score = margin * np.clip(top1_sim, 0.0, 1.0)
+
+        # 적응형 반경 기반 보정: 클래스 반경 안쪽일수록 신뢰도 강화
+        radius = max(best_class.radius, 1e-6)
+        distance = 1.0 - np.clip(best_sim, -1.0, 1.0)
+        radius_score = float(np.clip(1.0 - (distance / radius), 0.0, 1.0))
+
+        confidence = 0.7 * margin_score + 0.3 * radius_score
         return float(np.clip(confidence, 0.0, 1.0))
+
+    def _softmax_probabilities(
+        self, query_embedding: np.ndarray, temperature: float = SOFTMAX_TEMPERATURE
+    ) -> dict[str, float]:
+        temp = max(1e-4, temperature)
+        sims = []
+        for hc in self._homotopy_classes:
+            sim = Embedder.cosine_similarity(query_embedding, hc.centroid_array())
+            sims.append((hc.agent_id, sim))
+
+        logits = np.array([sim / temp for _, sim in sims], dtype=float)
+        logits -= logits.max()  # numerical stability
+        probs = np.exp(logits)
+        probs_sum = probs.sum()
+        if probs_sum <= 0:
+            return {aid: 0.0 for aid, _ in sims}
+        probs = probs / probs_sum
+        return {aid: float(p) for (aid, _), p in zip(sims, probs)}
+
+    @staticmethod
+    def _adaptive_radius(
+        centroid_emb: np.ndarray,
+        task_embeddings: list[np.ndarray],
+        margin: float = RADIUS_MARGIN,
+        fallback: float = 0.3,
+    ) -> float:
+        if not task_embeddings:
+            return float(np.clip(fallback, 0.05, 1.0))
+
+        distances = [
+            1.0 - Embedder.cosine_similarity(centroid_emb, emb)
+            for emb in task_embeddings
+        ]
+        mean_dist = float(np.mean(distances))
+        std_dist = float(np.std(distances))
+        radius = mean_dist + std_dist + margin
+        return float(np.clip(radius, 0.05, 1.0))
 
     def _check_ambiguity(
         self,

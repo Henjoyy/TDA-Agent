@@ -12,14 +12,40 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from dataclasses import asdict, dataclass, replace
 
 import google.genai as genai
 import numpy as np
 
-from config.settings import GEMINI_API_KEY, EMBEDDING_MODEL
+from config.settings import (
+    EMBEDDING_MODEL,
+    EMBEDDING_MODEL_CANDIDATES,
+    GEMINI_API_KEY,
+)
 from tad_mapper.models.journey import TaskStep
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class EmbeddingHealth:
+    active_model: str
+    model_available: bool
+    model_validation_error: str = ""
+    total_calls: int = 0
+    fallback_calls: int = 0
+    last_error: str = ""
+
+    @property
+    def fallback_ratio(self) -> float:
+        if self.total_calls <= 0:
+            return 0.0
+        return self.fallback_calls / self.total_calls
+
+    def to_dict(self) -> dict:
+        data = asdict(self)
+        data["fallback_ratio"] = round(self.fallback_ratio, 4)
+        return data
 
 
 class Embedder:
@@ -29,6 +55,14 @@ class Embedder:
 
     def __init__(self) -> None:
         self._client = genai.Client(api_key=GEMINI_API_KEY)
+        self._candidate_models = list(dict.fromkeys(
+            [EMBEDDING_MODEL, *EMBEDDING_MODEL_CANDIDATES]
+        ))
+        self._health = EmbeddingHealth(
+            active_model=EMBEDDING_MODEL,
+            model_available=True,
+        )
+        self._validate_embedding_model()
 
     # ── 기존 메서드 ──────────────────────────────────────────────────────────
 
@@ -87,15 +121,91 @@ class Embedder:
 
     def _embed_text(self, text: str) -> list[float]:
         """단일 텍스트 임베딩 (API 호출)"""
+        self._health.total_calls += 1
+        if not self._health.model_available:
+            self._health.fallback_calls += 1
+            return self._deterministic_fallback_vector(text)
+
         try:
-            result = self._client.models.embed_content(
-                model=EMBEDDING_MODEL,
-                contents=text,
-            )
-            return result.embeddings[0].values
+            return self._request_embedding(text, model=self._health.active_model)
         except Exception as e:
+            err = str(e)
+            self._health.last_error = err
+
+            # 모델 미지원 시 후보 모델 자동 전환
+            if self._is_model_not_found_error(e):
+                switched = self._try_switch_embedding_model(text)
+                if switched is not None:
+                    return switched
+                self._health.model_available = False
+                self._health.model_validation_error = err
+
+            self._health.fallback_calls += 1
             logger.warning(f"임베딩 생성 실패: {e}. 결정적 fallback 벡터 사용.")
             return self._deterministic_fallback_vector(text)
+
+    def _request_embedding(self, text: str, model: str) -> list[float]:
+        result = self._client.models.embed_content(
+            model=model,
+            contents=text,
+        )
+        return result.embeddings[0].values
+
+    def _validate_embedding_model(self) -> None:
+        """
+        초기화 시 임베딩 모델 동작 여부를 점검하고,
+        미지원 모델이면 자동으로 대체 모델을 탐색합니다.
+        """
+        probe = "embedding model validation"
+        try:
+            _ = self._request_embedding(probe, model=self._health.active_model)
+            self._health.model_available = True
+            return
+        except Exception as e:
+            if not self._is_model_not_found_error(e):
+                logger.warning(
+                    "임베딩 모델 초기 검증 실패(일시적 가능): %s", e
+                )
+                return
+
+            logger.warning(
+                "임베딩 모델 '%s' 사용 불가. 대체 모델 탐색 시작...",
+                self._health.active_model,
+            )
+            switched = self._try_switch_embedding_model(probe)
+            if switched is not None:
+                return
+
+            self._health.model_available = False
+            self._health.model_validation_error = str(e)
+            logger.error(
+                "지원되는 임베딩 모델을 찾지 못했습니다. fallback 모드로 동작합니다: %s",
+                e,
+            )
+
+    def _try_switch_embedding_model(self, text: str) -> list[float] | None:
+        current = self._health.active_model
+        for candidate in self._candidate_models:
+            if candidate == current:
+                continue
+            try:
+                vec = self._request_embedding(text, model=candidate)
+                self._health.active_model = candidate
+                self._health.model_available = True
+                self._health.model_validation_error = ""
+                logger.warning(
+                    "임베딩 모델 자동 전환: '%s' → '%s'", current, candidate
+                )
+                return vec
+            except Exception as e:
+                self._health.last_error = str(e)
+                continue
+        return None
+
+    @staticmethod
+    def _is_model_not_found_error(error: Exception) -> bool:
+        message = str(error).lower()
+        return "not_found" in message or "is not found" in message or "not supported" in message
 
     @staticmethod
     def _task_to_text(task: TaskStep) -> str:
@@ -147,3 +257,15 @@ class Embedder:
         if norm > 0:
             vec = vec / norm
         return vec.tolist()
+
+    def reset_health_stats(self) -> None:
+        """요청 단위 통계 초기화 (모델 상태는 유지)"""
+        self._health.total_calls = 0
+        self._health.fallback_calls = 0
+        self._health.last_error = ""
+
+    def get_health(self) -> EmbeddingHealth:
+        return replace(self._health)
+
+    def get_health_dict(self) -> dict:
+        return self._health.to_dict()

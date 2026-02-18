@@ -13,8 +13,16 @@ PROJECT_ROOT = Path(__file__).parent.parent
 
 # ── Gemini API 설정 ──────────────────────────────────────────
 GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
 EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "models/text-embedding-004")
+EMBEDDING_MODEL_CANDIDATES: list[str] = [
+    m.strip()
+    for m in os.getenv(
+        "EMBEDDING_MODEL_CANDIDATES",
+        "gemini-embedding-001,models/text-embedding-004,text-embedding-004",
+    ).split(",")
+    if m.strip()
+]
 
 # ── Unit Agent 정의 파일 ─────────────────────────────────────
 UNIT_AGENTS_CONFIG: Path = PROJECT_ROOT / "config" / "unit_agents.yaml"
@@ -31,6 +39,9 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 # ── API 서버 설정 ────────────────────────────────────────────
 API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
 API_PORT: int = int(os.getenv("API_PORT", "8000"))
+ROUTER_MAX_FALLBACK_RATIO: float = float(os.getenv("ROUTER_MAX_FALLBACK_RATIO", "0.2"))
+ROUTER_MIN_EMBED_CALLS: int = int(os.getenv("ROUTER_MIN_EMBED_CALLS", "5"))
+ROUTE_MIN_CONFIDENCE: float = float(os.getenv("ROUTE_MIN_CONFIDENCE", "0.35"))
 
 
 def validate_config() -> None:
