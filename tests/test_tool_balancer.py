@@ -30,6 +30,7 @@ def make_agent(agent_id: str, task_ids: list[str]) -> DiscoveredAgent:
         centroid=np.random.rand(10),
         suggested_name=f"Agent {agent_id}",
         suggested_role="테스트 역할",
+        routing_group_id=f"group_{agent_id}",
     )
 
 
@@ -199,6 +200,7 @@ class TestAgentSplitting:
         all_tasks = set()
         for a in split:
             all_tasks.update(a.task_ids)
+            assert a.routing_group_id == agent.routing_group_id
         assert all_tasks == set(task_ids)
 
     def test_split_single_task_no_change(self):

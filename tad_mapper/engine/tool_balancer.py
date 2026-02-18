@@ -240,6 +240,7 @@ class ToolBalancer:
                 suggested_name=f"{base_name} {suffix_labels[k]}",
                 suggested_role=agent.suggested_role,
                 suggested_capabilities=agent.suggested_capabilities,
+                routing_group_id=agent.routing_group_id or agent.agent_id,
             )
             split_agents.append(sub_agent)
 

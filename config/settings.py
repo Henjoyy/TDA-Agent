@@ -42,6 +42,10 @@ API_PORT: int = int(os.getenv("API_PORT", "8000"))
 ROUTER_MAX_FALLBACK_RATIO: float = float(os.getenv("ROUTER_MAX_FALLBACK_RATIO", "0.2"))
 ROUTER_MIN_EMBED_CALLS: int = int(os.getenv("ROUTER_MIN_EMBED_CALLS", "5"))
 ROUTE_MIN_CONFIDENCE: float = float(os.getenv("ROUTE_MIN_CONFIDENCE", "0.35"))
+ROUTE_MIN_PROB_GAP: float = float(os.getenv("ROUTE_MIN_PROB_GAP", "0.0"))
+ROUTER_DISABLE_ON_FALLBACK_RATIO: bool = os.getenv(
+    "ROUTER_DISABLE_ON_FALLBACK_RATIO", "false"
+).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
 def validate_config() -> None:

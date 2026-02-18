@@ -115,6 +115,45 @@ class TestHomotopyRouterBuild:
         agent_ids = {a.agent_id for a in agents}
         assert class_agent_ids == agent_ids
 
+    def test_build_groups_split_agents_by_routing_group_id(self):
+        """routing_group_id가 같으면 하나의 호모토피 클래스로 묶인다."""
+        embedder = make_mock_embedder()
+        router = HomotopyRouter(embedder)
+        agents = [
+            DiscoveredAgent(
+                agent_id="agent_a0",
+                cluster_id=0,
+                task_ids=["t1"],
+                task_names=["상품 검색"],
+                centroid=np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+                suggested_name="검색 A",
+                suggested_role="검색",
+                routing_group_id="search_group",
+            ),
+            DiscoveredAgent(
+                agent_id="agent_a1",
+                cluster_id=1,
+                task_ids=["t2"],
+                task_names=["재고 조회"],
+                centroid=np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+                suggested_name="검색 B",
+                suggested_role="조회",
+                routing_group_id="search_group",
+            ),
+            DiscoveredAgent(
+                agent_id="agent_b0",
+                cluster_id=2,
+                task_ids=["t3"],
+                task_names=["보고서 생성"],
+                centroid=np.array([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+                suggested_name="리포트",
+                suggested_role="생성",
+                routing_group_id="report_group",
+            ),
+        ]
+        router.build(agents)
+        assert len(router.homotopy_classes) == 2
+
 
 class TestRouting:
     def test_route_returns_routing_result(self):
@@ -185,6 +224,116 @@ class TestRouting:
         probs = router.route_soft("데이터 검색해줘")
         assert set(probs) == {"agent_0", "agent_1", "agent_2"}
         assert sum(probs.values()) == pytest.approx(1.0, abs=1e-6)
+
+    def test_route_selects_best_member_within_same_routing_group(self):
+        """동일 routing_group 내에서는 lexical 신호로 멤버를 선택한다."""
+        embedder = MagicMock(spec=Embedder)
+        embedder.embed_query.return_value = np.array(
+            [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        )
+        # 같은 group 멤버는 동일 임베딩(lexical로 구분), 다른 group은 직교 임베딩
+        def _embed_agent_profile(name, role, task_names):
+            text = " ".join(task_names)
+            if "보고서" in text:
+                return np.array([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+            return np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        embedder.embed_agent_profile.side_effect = _embed_agent_profile
+        embedder.get_health.return_value = type("H", (), {"fallback_ratio": 0.0})()
+
+        router = HomotopyRouter(embedder)
+        agents = [
+            DiscoveredAgent(
+                agent_id="agent_search",
+                cluster_id=0,
+                task_ids=["t1"],
+                task_names=["상품 검색"],
+                centroid=np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+                suggested_name="검색 에이전트",
+                suggested_role="검색",
+                routing_group_id="group_search",
+            ),
+            DiscoveredAgent(
+                agent_id="agent_lookup",
+                cluster_id=1,
+                task_ids=["t2"],
+                task_names=["재고 조회"],
+                centroid=np.array([1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+                suggested_name="조회 에이전트",
+                suggested_role="조회",
+                routing_group_id="group_search",
+            ),
+            DiscoveredAgent(
+                agent_id="agent_report",
+                cluster_id=2,
+                task_ids=["t3"],
+                task_names=["보고서 생성"],
+                centroid=np.array([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+                suggested_name="리포트 에이전트",
+                suggested_role="생성",
+                routing_group_id="group_report",
+            ),
+        ]
+        router.build(agents)
+        result = router.route("상품 검색해줘")
+        assert result.target_agent_id == "agent_search"
+        probs = router.route_soft("상품 검색해줘")
+        assert set(probs) == {"agent_search", "agent_lookup", "agent_report"}
+        assert sum(probs.values()) == pytest.approx(1.0, abs=1e-6)
+
+    def test_lexical_similarity_not_over_penalized_for_large_agent(self):
+        """큰 token set을 가진 agent도 query coverage가 같으면 과도하게 불리하지 않아야 한다."""
+        query_tokens = {"재고", "조회", "추천", "요청"}
+        small_agent_tokens = {"재고", "조회", "관리", "대시보드"}
+        large_agent_tokens = {
+            "재고", "조회", "추천", "주문", "발주", "알림", "품절", "창고",
+            "리포트", "분석", "예측", "수요", "공급", "품목", "카테고리",
+        }
+        small_score = HomotopyRouter._lexical_similarity(query_tokens, small_agent_tokens)
+        large_score = HomotopyRouter._lexical_similarity(query_tokens, large_agent_tokens)
+        assert large_score >= small_score - 0.05
+
+    def test_low_evidence_prefers_hub_member_in_group(self):
+        """멤버 신호가 모두 약하면 class 내 허브(태스크 다수 보유)를 우선 선택한다."""
+        embedder = MagicMock(spec=Embedder)
+        embedder.embed_query.return_value = np.zeros(10)
+        embedder.embed_agent_profile.return_value = np.zeros(10)
+        embedder.get_health.return_value = type("H", (), {"fallback_ratio": 1.0})()
+
+        router = HomotopyRouter(embedder)
+        hub = DiscoveredAgent(
+            agent_id="agent_hub",
+            cluster_id=0,
+            task_ids=["t1", "t2", "t3", "t4", "t5"],
+            task_names=["무역 분석", "수입 분석", "수출 분석", "관세 분석", "리스크 분석"],
+            centroid=np.zeros(10),
+            suggested_name="허브 에이전트",
+            suggested_role="분석",
+            routing_group_id="group_trade",
+        )
+        leaf = DiscoveredAgent(
+            agent_id="agent_leaf",
+            cluster_id=1,
+            task_ids=["t6"],
+            task_names=["환율 알림"],
+            centroid=np.zeros(10),
+            suggested_name="리프 에이전트",
+            suggested_role="알림",
+            routing_group_id="group_trade",
+        )
+        other = DiscoveredAgent(
+            agent_id="agent_other",
+            cluster_id=2,
+            task_ids=["t7"],
+            task_names=["문서 생성"],
+            centroid=np.zeros(10),
+            suggested_name="다른 에이전트",
+            suggested_role="생성",
+            routing_group_id="group_other",
+        )
+        router.build([hub, leaf, other])
+
+        result = router.route("의미가 모호한 요청")
+        assert result.target_agent_id == "agent_hub"
 
 
 class TestAmbiguity:

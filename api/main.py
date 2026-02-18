@@ -23,7 +23,12 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from config.settings import OUTPUT_DIR, GEMINI_MODEL, ROUTE_MIN_CONFIDENCE
+from config.settings import (
+    GEMINI_MODEL,
+    OUTPUT_DIR,
+    ROUTE_MIN_CONFIDENCE,
+    ROUTE_MIN_PROB_GAP,
+)
 from tad_mapper.pipeline import PipelineResult, TADMapperPipeline
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s | %(name)s | %(message)s")
@@ -116,6 +121,22 @@ def _active_session_count() -> int:
     with _sessions_lock:
         _purge_sessions_locked(now)
         return len(_sessions)
+
+
+def _effective_routing_policy(fallback_ratio: float) -> tuple[float, float, bool]:
+    """
+    라우팅 게이트 정책을 임베딩 건강도에 따라 동적으로 조정합니다.
+
+    Returns:
+        (min_confidence, min_prob_gap, enforce_ambiguity_reject)
+    """
+    if fallback_ratio >= 0.8:
+        # 임베딩이 사실상 죽은 상태에서는 lexical/hybrid 보정을 신뢰하고
+        # 과도한 reject를 줄여 라우팅 자체는 진행.
+        return min(ROUTE_MIN_CONFIDENCE, 0.10), min(ROUTE_MIN_PROB_GAP, 0.0), False
+    if fallback_ratio >= 0.4:
+        return min(ROUTE_MIN_CONFIDENCE, 0.20), min(ROUTE_MIN_PROB_GAP, 0.05), True
+    return ROUTE_MIN_CONFIDENCE, ROUTE_MIN_PROB_GAP, True
 
 
 # ── 요청/응답 모델 ─────────────────────────────────────────────────────────────
@@ -263,7 +284,7 @@ async def route_query(req: RouteRequest):
                    "먼저 /api/analyze를 실행하세요."
         )
 
-    pipeline, _ = session
+    pipeline, result = session
     if pipeline.router is None or not pipeline.router.is_ready:
         reason = pipeline.router_block_reason or "Homotopy Router가 준비되지 않았습니다."
         raise HTTPException(
@@ -275,8 +296,28 @@ async def route_query(req: RouteRequest):
         )
 
     try:
+        fallback_ratio = 0.0
+        if result is not None and isinstance(getattr(result, "embedding_health", None), dict):
+            fallback_ratio = float(result.embedding_health.get("fallback_ratio", 0.0))
+        min_conf, min_gap, enforce_ambiguity_reject = _effective_routing_policy(
+            fallback_ratio
+        )
+
         routing = pipeline.route_query(req.query)
-        if routing.confidence < ROUTE_MIN_CONFIDENCE or routing.is_ambiguous:
+        sorted_probs = sorted(
+            routing.routing_probabilities.items(),
+            key=lambda x: x[1],
+            reverse=True,
+        )
+        top1_prob = float(sorted_probs[0][1]) if sorted_probs else 0.0
+        top2_prob = float(sorted_probs[1][1]) if len(sorted_probs) > 1 else 0.0
+        prob_gap = max(0.0, top1_prob - top2_prob)
+
+        if (
+            routing.confidence < min_conf
+            or (routing.is_ambiguous and enforce_ambiguity_reject)
+            or prob_gap < min_gap
+        ):
             raise HTTPException(
                 status_code=409,
                 detail={
@@ -285,8 +326,12 @@ async def route_query(req: RouteRequest):
                         "분석을 다시 실행하거나 쿼리를 구체화하세요."
                     ),
                     "confidence": round(routing.confidence, 4),
-                    "threshold": ROUTE_MIN_CONFIDENCE,
+                    "threshold": min_conf,
+                    "prob_gap": round(prob_gap, 4),
+                    "prob_gap_threshold": min_gap,
                     "is_ambiguous": routing.is_ambiguous,
+                    "ambiguity_enforced": enforce_ambiguity_reject,
+                    "fallback_ratio": round(fallback_ratio, 4),
                     "ambiguity_reason": routing.ambiguity_reason,
                     "alternatives": [a.model_dump() for a in routing.alternatives],
                 },
@@ -294,6 +339,12 @@ async def route_query(req: RouteRequest):
         return {
             "status": "success",
             "routing": routing.to_dict(),
+            "routing_policy": {
+                "fallback_ratio": round(fallback_ratio, 4),
+                "min_confidence": min_conf,
+                "min_prob_gap": min_gap,
+                "ambiguity_enforced": enforce_ambiguity_reject,
+            },
             "math": {
                 "formula": "Φ(x) = U_k ⟺ [x] = [x_k]",
                 "homotopy_class": routing.homotopy_class_id,

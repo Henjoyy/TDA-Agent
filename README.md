@@ -113,6 +113,9 @@ User Journey (JSON/CSV)
 - **Weighted Euclidean 클러스터링**: `reasoning_depth`, `domain_specificity`를 1.5x 가중해 Agent 정체성을 더 강하게 반영합니다.
 - **적응형 라우팅 반경**: Agent별 태스크 분산(평균 거리 + 표준편차 + margin)으로 반경을 동적으로 계산합니다.
 - **확률 라우팅(Φ_soft)**: `route_soft()`와 `routing_probabilities`로 다중 Agent 후보 확률을 제공합니다.
+- **Semantic Group 라우팅**: Tool 밸런싱으로 split된 Agent를 `routing_group_id`로 다시 묶어 의미 축을 보존합니다.
+- **Hybrid 유사도**: 임베딩 유사도 + lexical 토큰 유사도를 결합해 fallback 환경에서도 라우팅 품질을 보정합니다.
+- **Fallback-aware 멤버 선택**: 그룹 내부 라우팅에서 query coverage 중심 lexical 점수 + hub prior를 적용해 split agent 오탐을 줄입니다.
 
 ### Query Manifold & 커버리지 분석
 
@@ -141,7 +144,7 @@ User Journey (JSON/CSV)
 ### 라우팅 신뢰성 강화 (v0.2.4)
 
 - **임베딩 모델 자동 전환**: 기본 임베딩 모델이 미지원(404)일 때 후보 모델로 자동 전환합니다.
-- **Router 보호 가드**: 임베딩 fallback 비율이 임계값보다 높으면 Router를 비활성화합니다.
+- **Router 보호 가드**: 임베딩 fallback 비율이 높을 때 기본은 hybrid 모드로 계속 라우팅하고, 필요 시 비활성화할 수 있습니다.
 - **Low-confidence 차단**: 신뢰도/모호성 기준 미달 시 `/api/route`는 409를 반환해 오탐 라우팅을 막습니다.
 
 ### HDBSCAN 기반 Agent 발견 (v0.2.1)
@@ -347,7 +350,9 @@ task_001,태스크명,설명,user,입력1;입력2,출력1,,태그1;태그2
 | `TAD_MCP_MAX_WORKERS` | `4` | MCP Tool chunk 병렬 처리 워커 수 |
 | `ROUTER_MAX_FALLBACK_RATIO` | `0.2` | Router 허용 최대 임베딩 fallback 비율 |
 | `ROUTER_MIN_EMBED_CALLS` | `5` | fallback 비율 판단 최소 임베딩 호출 수 |
+| `ROUTER_DISABLE_ON_FALLBACK_RATIO` | `false` | `true`면 fallback 비율 초과 시 Router 비활성화 |
 | `ROUTE_MIN_CONFIDENCE` | `0.35` | 라우팅 성공으로 인정할 최소 confidence |
+| `ROUTE_MIN_PROB_GAP` | `0.0` | top1-top2 확률 차이 최소값 (`/api/route` 게이트) |
 
 MCP Tool 단계 타임아웃/속도 설정:
 - `TAD_MCP_TIMEOUT_MS=0` 또는 음수: LLM HTTP 타임아웃 비활성화
@@ -364,8 +369,41 @@ MCP Tool 단계 타임아웃/속도 설정:
 
 # 모듈별 실행
 .venv/bin/python -m pytest tests/test_tool_balancer.py -v   # 16개
-.venv/bin/python -m pytest tests/test_homotopy_router.py -v # 12개
+.venv/bin/python -m pytest tests/test_homotopy_router.py -v # 14개
 .venv/bin/python -m pytest tests/test_query_manifold.py -v  # 7개
+```
+
+## 라우팅 A/B 평가
+
+```bash
+# task 기반 자동 쿼리셋으로 strict_guard vs hybrid_guard 비교
+.venv/bin/python -m tad_mapper.eval.routing_ab \
+  --input data/samples/ai_opportunities_30.csv
+
+# 커스텀 쿼리셋(JSON 배열) 사용
+.venv/bin/python -m tad_mapper.eval.routing_ab \
+  --input data/samples/ai_opportunities_30.csv \
+  --queries data/samples/routing_queries.json
+
+# confidence/gap 임계값 스윕 + 리더보드 생성
+.venv/bin/python -m tad_mapper.eval.routing_ab \
+  --input data/samples/ai_opportunities_30.csv \
+  --queries data/samples/routing_queries.json \
+  --conf-thresholds 0.1,0.2,0.3,0.4 \
+  --gap-thresholds 0.0,0.05,0.1,0.15
+```
+
+출력:
+- `output/eval/routing_ab_*.json` : 모드별 요약 지표
+- `output/eval/routing_ab_*.csv` : 쿼리별 상세 결과(정답 agent/group hit 포함)
+- `output/eval/routing_ab_*.md` : threshold leaderboard 요약 리포트
+
+평가용 쿼리셋 자동 생성:
+```bash
+.venv/bin/python -m tad_mapper.eval.generate_queries \
+  --input data/samples/ai_opportunities_30.csv \
+  --output data/samples/routing_queries.generated.json \
+  --variants 3
 ```
 
 ---

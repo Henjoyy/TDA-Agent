@@ -60,6 +60,8 @@ class DiscoveredAgent:
     suggested_role: str = ""
     suggested_capabilities: list[str] = field(default_factory=list)
     tool_prefix: str = ""
+    # 라우팅 의미 축(semantic class) 식별자: 운영 분할(split) 이후에도 유지
+    routing_group_id: str = ""
 
 
 class TDAAnalyzer:
@@ -210,6 +212,7 @@ class TDAAnalyzer:
                 task_ids=[f.task_id for f in features],
                 task_names=[f.task_name for f in features],
                 centroid=features[0].vector if features else np.zeros(10),
+                routing_group_id="agent_0",
             )]
 
         matrix = np.stack([f.vector for f in features])
@@ -319,6 +322,7 @@ class TDAAnalyzer:
                 task_ids=[f.task_id for f in cluster_features],
                 task_names=[f.task_name for f in cluster_features],
                 centroid=centroid,
+                routing_group_id=f"agent_{idx}",
             ))
         logger.info(
             f"Agent 구성 완료: {len(agents)}개 "
@@ -431,6 +435,7 @@ class TDAAnalyzer:
                 suggested_name=f"{base_name} {suffix}",
                 suggested_role=agent.suggested_role,
                 suggested_capabilities=list(agent.suggested_capabilities),
+                routing_group_id=agent.routing_group_id or agent.agent_id,
             )
             split_agents.append(sub_agent)
 

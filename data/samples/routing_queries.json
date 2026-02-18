@@ -1,0 +1,17 @@
+[
+  {
+    "query": "고객 이탈 위험을 예측하고 알림 보내줘",
+    "label": "churn-alert",
+    "expected_task_id": "task_003"
+  },
+  {
+    "query": "주간 성과 보고서를 작성해줘",
+    "label": "weekly-report",
+    "expected_task_id": "task_014"
+  },
+  {
+    "query": "재고를 조회하고 부족분 발주를 추천해줘",
+    "label": "inventory-replenishment",
+    "expected_task_id": "task_021"
+  }
+]

@@ -8,15 +8,19 @@ Unit Agent는 **"단일한 비즈니스 목적을 달성하기 위해 긴밀하�
 - **Monolith**: 너무 크면 전문성이 떨어집니다. (예: "전체 시스템 관리 에이전트" ❌)
 - **Optimal**: 하나의 명확한 책임을 가집니다. (예: "무역 리스크 분석 에이전트" ✅)
 
-## 2. 태스크 분석 기준 (Analysis Criteria)
-태스크를 분석할 때는 다음 6가지 차원(Dimension)을 고려하세요:
+## 2. 태스크 분석 기준 (10D Analysis Criteria)
+태스크를 분석할 때는 다음 10가지 차원(Dimension)을 고려하여 0.0 ~ 1.0 사이의 벡터를 추출합니다:
 
-1. **데이터 유형 (Data Type)**: 정형 데이터(수치, 통계) vs 비정형 데이터(텍스트, 이미지)
-2. **복잡도 (Complexity)**: 단순 반복 작업 vs 고차원 추론/판단 필요
-3. **상호작용 (Interaction)**: 사용자 직접 대화 vs 백그라운드 처리
-4. **도메인 (Domain)**: 무역, 물류, 금융, 고객지원, IT운영 등
-5. **자동화 가능성 (Automation)**: 완전 자동화 가능 vs 인간 개입 필수
-6. **실행 빈도 (Frequency)**: 실시간/빈번 vs 배치/가끔
+1. **데이터 유형 (Data Type)**: 정형(DB/수치/API) vs 비정형(텍스트/이미지)
+2. **추론 깊이 (Reasoning Depth)**: 단순 조회 vs 분석/예측/복합 추론
+3. **자동화 가능성 (Automation Potential)**: 규칙 기반 완전 자동화 vs 사람의 주관적 판단 필수
+4. **상호작용 유형 (Interaction Type)**: 읽기 전용 vs 외부 시스템 쓰기/실행/알림
+5. **출력 복잡도 (Output Complexity)**: 단순 결과값 vs 복합 보고서/문서/시각화
+6. **도메인 특화도 (Domain Specificity)**: 범용 서비스 vs 고도 전문 지식/규정 필요
+7. **시간 민감도 (Temporal Sensitivity)**: 배치/지연 가능 vs 실시간 응답/모니터링 필수
+8. **데이터 규모 (Data Volume)**: 단건/소량 처리 vs 대용량/고처리량 빅데이터
+9. **보안 수준 (Security Level)**: 공개 데이터 vs 민감 정보/규제/개인정보 보호 중요
+10. **상태 의존성 (State Dependency)**: 단발성(Stateless) vs 세션/워크플로/트랜잭션 상태 유지 강함
 
 ## 3. Agent Naming & Role Definition (Best Practices)
 
@@ -37,4 +41,4 @@ Unit Agent가 사용할 도구(Tool)는 다음 원칙을 따릅니다:
 - **Naming**: `verb_noun` 형식을 엄수합니다 (예: `analyze_risk`, `fetch_customs_data`).
 
 ---
-**Note to Model**: 위 가이드라인을 바탕으로, 주어진 태스크들이 최적의 위상학적 클러스터를 형성하도록 6차원 특징 벡터를 정밀하게 추출해주세요.
+**Note to Model**: 위 가이드라인을 바탕으로, 주어진 태스크들이 최적의 위상학적 클러스터를 형성하도록 10차원 특징 벡터를 정밀하게 추출해주세요.

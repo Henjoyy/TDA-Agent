@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -22,6 +24,7 @@ import numpy as np
 
 from config.settings import (
     OUTPUT_DIR,
+    ROUTER_DISABLE_ON_FALLBACK_RATIO,
     ROUTER_MAX_FALLBACK_RATIO,
     ROUTER_MIN_EMBED_CALLS,
     TDA_N_INTERVALS,
@@ -52,6 +55,11 @@ from tad_mapper.output.mcp_generator import MCPGenerator
 from tad_mapper.output.report_generator import ReportGenerator
 
 logger = logging.getLogger(__name__)
+_KEYWORD_PATTERN = re.compile(r"[0-9A-Za-z가-힣]{2,}")
+_STOPWORDS = {
+    "execute", "task", "agent", "tool", "query", "data",
+    "처리", "작업", "요청", "기능", "태스크", "에이전트",
+}
 
 
 @dataclass
@@ -216,6 +224,9 @@ class TADMapperPipeline:
         else:
             logger.info(f"  → {balance_report.summary}")
 
+        # 라우팅 품질 보강: MCP Tool 의미 정보를 Agent에 주입
+        self._enrich_agents_for_routing(agents, mcp_tools)
+
         # 8. 리포트 생성 및 저장
         logger.info("[8/11] 리포트 생성 중...")
         report_md = self._report_gen.generate_markdown(
@@ -356,6 +367,59 @@ class TADMapperPipeline:
         composition = self.compose_tools(query_text, routing.target_agent_id)
         return routing, composition
 
+    @staticmethod
+    def _enrich_agents_for_routing(
+        agents: list[DiscoveredAgent],
+        mcp_tools: list[MCPToolSchema],
+    ) -> None:
+        """
+        Tool 메타데이터로 Agent 의미 정보를 보강합니다.
+        - capabilities에 도메인 키워드 추가
+        - generic한 이름/역할은 키워드 기반으로 최소 보정
+        """
+        texts_by_agent: dict[str, list[str]] = defaultdict(list)
+        for tool in mcp_tools:
+            ann = tool.annotations
+            if ann is None:
+                continue
+            aid = ann.assigned_agent
+            if not aid:
+                continue
+            texts_by_agent[aid].append(tool.name.replace("_", " "))
+            if tool.description:
+                texts_by_agent[aid].append(tool.description)
+
+        for agent in agents:
+            texts = texts_by_agent.get(agent.agent_id, [])
+            if not texts:
+                continue
+            tokens: list[str] = []
+            for text in texts:
+                for token in _KEYWORD_PATTERN.findall(text.lower()):
+                    if token in _STOPWORDS or len(token) < 2:
+                        continue
+                    tokens.append(token)
+            if not tokens:
+                continue
+            top_keywords = [k for k, _ in Counter(tokens).most_common(8)]
+
+            # capabilities 확장
+            merged_caps = list(dict.fromkeys([
+                *(agent.suggested_capabilities or []),
+                *top_keywords,
+            ]))
+            agent.suggested_capabilities = merged_caps[:10]
+
+            # 이름/역할이 generic할 때만 최소 보정
+            if not agent.suggested_name or "태스크 그룹" in agent.suggested_name:
+                name_keywords = top_keywords[:2]
+                if name_keywords:
+                    agent.suggested_name = " ".join(name_keywords) + " 에이전트"
+            if not agent.suggested_role or "태스크 그룹" in agent.suggested_role:
+                role_keywords = ", ".join(top_keywords[:4])
+                if role_keywords:
+                    agent.suggested_role = f"{role_keywords} 관련 요청 처리"
+
     @property
     def router(self) -> HomotopyRouter | None:
         return self._router
@@ -382,8 +446,15 @@ class TADMapperPipeline:
             total_calls >= ROUTER_MIN_EMBED_CALLS
             and fallback_ratio > ROUTER_MAX_FALLBACK_RATIO
         ):
-            return (
+            message = (
                 f"임베딩 fallback 비율 과다({fallback_ratio:.1%}) "
                 f"- 임계값 {ROUTER_MAX_FALLBACK_RATIO:.1%} 초과"
             )
+            if ROUTER_DISABLE_ON_FALLBACK_RATIO:
+                return message
+            logger.warning(
+                "%s. 라우터는 hybrid(lexical 보정) 모드로 계속 동작합니다.",
+                message,
+            )
+            return ""
         return ""
