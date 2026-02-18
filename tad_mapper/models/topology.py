@@ -6,8 +6,10 @@
 3. CoverageRegion — 에이전트 커버리지 영역 Ui
 4. CoverageMetrics — Q ⊆ ∪Ui 커버리지 측정값
 5. RoutingResult  — Φ(x) = Uk 라우팅 결과
-6. ToolExecutionStep / CompositionPlan — 툴 합성 y = (t_π(m) ∘ ... ∘ t_π(1))(x)
-7. BalanceReport  — MCP Tool 부하 균형 분석
+6. HierarchyNode / HierarchicalRoutingPlan — Master/Orchestrator/Unit 계층 실행 계획
+7. ToolExecutionStep / CompositionPlan — 툴 합성 y = (t_π(m) ∘ ... ∘ t_π(1))(x)
+8. HierarchicalExecutionPlan — 계층 라우팅 결과의 Unit별 합성 계획
+9. BalanceReport  — MCP Tool 부하 균형 분석
 """
 from __future__ import annotations
 
@@ -141,7 +143,61 @@ class RoutingResult(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 6. Tool Composition Plan
+# 6. Hierarchical Routing Plan
+# ─────────────────────────────────────────────────────────────────────────────
+
+class HierarchyNode(BaseModel):
+    """계층형 에이전트 노드 정의 (Master/Orchestrator/Unit)"""
+    node_id: str
+    tier: str = Field(description="MASTER | ORCHESTRATOR | UNIT")
+    name: str = ""
+    parent_id: str = ""
+    child_ids: list[str] = Field(default_factory=list)
+    unit_agent_ids: list[str] = Field(default_factory=list)
+    description: str = ""
+
+
+class HierarchyBlueprint(BaseModel):
+    """분석 결과에서 도출된 에이전트 계층 구조"""
+    master_id: str = "master_agent"
+    nodes: list[HierarchyNode] = Field(default_factory=list)
+    unit_to_orchestrator: dict[str, str] = Field(default_factory=dict)
+    orchestrator_to_units: dict[str, list[str]] = Field(default_factory=dict)
+
+
+class SubTaskAssignment(BaseModel):
+    """Orchestrator가 분해한 서브태스크의 Unit 할당 결과"""
+    subtask_id: str
+    subtask_text: str
+    orchestrator_id: str = ""
+    unit_agent_id: str
+    score: float = Field(default=0.0, ge=0.0, le=1.0)
+    reason: str = ""
+
+
+class HierarchicalRoutingPlan(BaseModel):
+    """
+    Master → (Orchestrator) → Unit 계층 라우팅 계획
+
+    - 단순 작업: Master → Unit
+    - 복합 작업: Master → Orchestrator → Unit
+    """
+    query_text: str
+    master_agent_id: str = "master_agent"
+    path_type: str = Field(description="master_unit | master_orchestrator_unit")
+    routing: RoutingResult
+    complexity_score: float = Field(..., ge=0.0, le=1.0)
+    complexity_threshold: float = Field(..., ge=0.0, le=1.0)
+    orchestrator_probabilities: dict[str, float] = Field(default_factory=dict)
+    selected_orchestrator_ids: list[str] = Field(default_factory=list)
+    selected_unit_ids: list[str] = Field(default_factory=list)
+    subtasks: list[str] = Field(default_factory=list)
+    assignments: list[SubTaskAssignment] = Field(default_factory=list)
+    rationale: list[str] = Field(default_factory=list)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 7. Tool Composition Plan
 # ─────────────────────────────────────────────────────────────────────────────
 
 class ToolExecutionStep(BaseModel):
@@ -191,7 +247,42 @@ class CompositionPlan(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 7. Tool Balance Report
+# 8. Hierarchical Execution Plan
+# ─────────────────────────────────────────────────────────────────────────────
+
+class HierarchicalExecutionStep(BaseModel):
+    """서브태스크 단위 Unit 실행 계획"""
+    subtask_id: str
+    subtask_text: str
+    source_subtask_ids: list[str] = Field(
+        default_factory=list,
+        description="이 실행 단계에 병합된 원본 subtask ID 목록",
+    )
+    source_subtask_texts: list[str] = Field(
+        default_factory=list,
+        description="이 실행 단계에 병합된 원본 subtask 텍스트 목록",
+    )
+    orchestrator_id: str = ""
+    unit_agent_id: str
+    composition_plan: CompositionPlan
+
+
+class HierarchicalExecutionPlan(BaseModel):
+    """
+    Master/Orchestrator가 분해한 결과에 대해
+    Unit별 Tool 합성 계획까지 확정한 최종 실행 계획
+    """
+    query_text: str
+    hierarchical_routing: HierarchicalRoutingPlan
+    execution_steps: list[HierarchicalExecutionStep] = Field(default_factory=list)
+    total_steps: int = 0
+
+    def model_post_init(self, __context: Any) -> None:
+        self.total_steps = len(self.execution_steps)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 9. Tool Balance Report
 # ─────────────────────────────────────────────────────────────────────────────
 
 class BalanceReport(BaseModel):

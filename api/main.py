@@ -3,6 +3,8 @@ FastAPI 백엔드 - TAD-Mapper 웹 API
 
 신규 엔드포인트:
 - POST /api/route              : 쿼리 → Agent 라우팅 (Φ 함수)
+- POST /api/route-hierarchy    : 쿼리 → 계층 라우팅 계획 (Master→(Orchestrator)→Unit)
+- POST /api/route-hierarchy-and-compose : 계층 라우팅 + Unit별 Tool 합성
 - POST /api/compose            : 쿼리 + Agent → Tool 합성 계획
 - GET  /api/coverage/{oid}     : 커버리지 메트릭 조회
 - POST /api/route-and-compose  : 라우팅 + 합성 한번에
@@ -245,6 +247,14 @@ async def analyze(
             "tool_balance": balance_summary,
             "router_ready": pipeline.router is not None and pipeline.router.is_ready,
             "router_block_reason": pipeline.router_block_reason,
+            "hierarchy": (
+                {
+                    "enabled": pipeline.hierarchy is not None,
+                    "orchestrator_count": len(pipeline.hierarchy.orchestrator_to_units)
+                    if pipeline.hierarchy else 0,
+                    "unit_count": len(result.agents),
+                }
+            ),
             "embedding_health": result.embedding_health,
             "result": result.report_json,
             "output_id": output_id,
@@ -358,6 +368,120 @@ async def route_query(req: RouteRequest):
         raise
     except Exception as e:
         logger.exception(f"라우팅 실패: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/route-hierarchy")
+async def route_hierarchy(req: RouteRequest):
+    """
+    Master → (Orchestrator) → Unit 계층 라우팅 계획을 생성합니다.
+
+    - 단순 쿼리: Master → Unit
+    - 복합/모호 쿼리: Master → Orchestrator → Unit(서브태스크 분해)
+    """
+    session = _get_session(req.output_id)
+    if not session:
+        raise HTTPException(
+            status_code=404,
+            detail=f"세션 '{req.output_id}'를 찾을 수 없습니다. "
+                   "먼저 /api/analyze를 실행하세요."
+        )
+
+    pipeline, result = session
+    if pipeline.router is None or not pipeline.router.is_ready:
+        reason = pipeline.router_block_reason or "Homotopy Router가 준비되지 않았습니다."
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"{reason} 분석을 다시 실행하세요."
+                if "분석" not in reason else reason
+            ),
+        )
+
+    try:
+        plan = pipeline.plan_hierarchy(req.query)
+        fallback_ratio = 0.0
+        if result is not None and isinstance(getattr(result, "embedding_health", None), dict):
+            fallback_ratio = float(result.embedding_health.get("fallback_ratio", 0.0))
+
+        return {
+            "status": "success",
+            "hierarchical_plan": plan.model_dump(),
+            "routing_policy": {
+                "fallback_ratio": round(fallback_ratio, 4),
+                "path_type": plan.path_type,
+                "complexity_score": round(plan.complexity_score, 4),
+                "complexity_threshold": plan.complexity_threshold,
+            },
+            "math": {
+                "master_formula": "Master(q) → {Unit | Orchestrator}",
+                "orchestrator_formula": "Orchestrator(g, q) → {(subtask_i, Unit_j)}",
+                "routing_formula": "Φ(x) = U_k ⟺ [x] = [x_k]",
+            },
+        }
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        logger.exception(f"계층 라우팅 계획 실패: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/route-hierarchy-and-compose")
+async def route_hierarchy_and_compose(req: RouteAndComposeRequest):
+    """
+    계층 라우팅 + 서브태스크별 Unit Tool 합성을 한번에 실행합니다.
+
+    1. Master가 단순/복합 경로를 선택
+    2. (복합 시) Orchestrator가 서브태스크 분해 + Unit 배정
+    3. 각 Unit에 대해 Tool 합성 계획 생성
+    """
+    session = _get_session(req.output_id)
+    if not session:
+        raise HTTPException(
+            status_code=404,
+            detail=f"세션 '{req.output_id}'를 찾을 수 없습니다."
+        )
+
+    pipeline, result = session
+    if pipeline.router is None or not pipeline.router.is_ready:
+        reason = pipeline.router_block_reason or "Homotopy Router가 준비되지 않았습니다."
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"{reason} 분석을 다시 실행하세요."
+                if "분석" not in reason else reason
+            ),
+        )
+
+    try:
+        execution = pipeline.route_hierarchy_and_compose(req.query)
+        fallback_ratio = 0.0
+        if result is not None and isinstance(getattr(result, "embedding_health", None), dict):
+            fallback_ratio = float(result.embedding_health.get("fallback_ratio", 0.0))
+        return {
+            "status": "success",
+            "query": req.query,
+            "hierarchical_execution": execution.model_dump(),
+            "routing_policy": {
+                "fallback_ratio": round(fallback_ratio, 4),
+                "path_type": execution.hierarchical_routing.path_type,
+                "complexity_score": round(
+                    execution.hierarchical_routing.complexity_score, 4
+                ),
+                "complexity_threshold": execution.hierarchical_routing.complexity_threshold,
+            },
+            "math": {
+                "step1": "Master(q) → {Unit | Orchestrator}",
+                "step2": "Orchestrator(g, q) → {(subtask_i, Unit_j)}",
+                "step3": "y_i = (t_π(m_i) ∘ ... ∘ t_π(1))(subtask_i)",
+            },
+        }
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.exception(f"계층 라우팅+합성 실패: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -526,6 +650,8 @@ async def health():
             "hdbscan_clustering",
             "query_manifold",
             "homotopy_routing",
+            "hierarchical_routing_plan",
+            "hierarchical_routing_compose",
             "routing_confidence_guard",
             "embedding_model_auto_switch",
             "tool_composition",

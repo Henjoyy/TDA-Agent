@@ -40,6 +40,10 @@ $$y = (t_{\pi(m)} \circ \cdots \circ t_{\pi(2)} \circ t_{\pi(1)})(x)$$
 
 [https://github.com/Henjoyy/TDA-Agent](https://github.com/Henjoyy/TDA-Agent)
 
+## 시스템 동작 문서
+
+- 상세 동작/구성/장애대응 흐름: `/Users/hahyeonjong/TAD-Agent Mapping/SYSTEM_RUNTIME.md`
+
 ---
 
 ## 빠른 시작
@@ -116,6 +120,7 @@ User Journey (JSON/CSV)
 - **Semantic Group 라우팅**: Tool 밸런싱으로 split된 Agent를 `routing_group_id`로 다시 묶어 의미 축을 보존합니다.
 - **Hybrid 유사도**: 임베딩 유사도 + lexical 토큰 유사도를 결합해 fallback 환경에서도 라우팅 품질을 보정합니다.
 - **Fallback-aware 멤버 선택**: 그룹 내부 라우팅에서 query coverage 중심 lexical 점수 + hub prior를 적용해 split agent 오탐을 줄입니다.
+- **계층형 라우팅 계획**: `Master → (Orchestrator) → Unit` 경로를 지원하며, 단순 쿼리는 `Master → Unit`으로 자동 단축합니다.
 
 ### Query Manifold & 커버리지 분석
 
@@ -140,6 +145,7 @@ User Journey (JSON/CSV)
 - **배치 분할 처리**: 많은 태스크를 한 번에 생성하지 않고 chunk 단위로 분할해 지연/실패 확률을 낮췄습니다.
 - **재시도 횟수 제한**: 실패 시 제한된 횟수만 재시도하고, 초과 시 즉시 fallback 스키마로 복구합니다.
 - **프런트 분석 요청 타임아웃**: 웹 대시보드 분석 요청도 120초 제한을 적용해 무한 로딩 상태를 차단합니다.
+- **공유 Tool 병합**: 유사한 태스크는 Agent 내부에서 하나의 공유 MCP Tool로 병합해 Tool 수를 줄입니다.
 
 ### 라우팅 신뢰성 강화 (v0.2.4)
 
@@ -348,16 +354,32 @@ task_001,태스크명,설명,user,입력1;입력2,출력1,,태그1;태그2
 | `TAD_MCP_BATCH_SIZE` | `10` | MCP Tool 생성 chunk 크기 |
 | `TAD_MCP_RETRIES` | `0` | MCP Tool 생성 실패 시 재시도 횟수 |
 | `TAD_MCP_MAX_WORKERS` | `4` | MCP Tool chunk 병렬 처리 워커 수 |
+| `TAD_MCP_ENABLE_TOOL_MERGE` | `true` | 유사 태스크 Tool을 공유 Tool로 병합할지 여부 |
+| `TAD_MCP_MERGE_MIN_SIMILARITY` | `0.55` | 공유 Tool 병합 최소 유사도 |
+| `TAD_MCP_MAX_TASKS_PER_TOOL` | `4` | 하나의 공유 Tool이 커버할 최대 태스크 수 |
+| `TAD_MCP_ENABLE_TASK_DEDUP` | `true` | MCP 생성 전 유사 태스크를 대표 태스크로 사전 압축할지 여부 |
+| `TAD_MCP_TASK_DEDUP_MIN_TASKS` | `12` | 사전 압축을 시작할 최소 태스크 수 |
+| `TAD_MCP_TASK_DEDUP_MIN_SIMILARITY` | `0.72` | 대표 태스크로 묶는 최소 유사도 |
+| `TAD_MCP_TASK_DEDUP_LOOSE_SIMILARITY` | `0.45` | 구조 유사(태그/입출력/의도) 조건에서 적용할 완화 유사도 |
+| `TAD_MCP_TASK_DEDUP_MIN_TAG_OVERLAP` | `0.5` | 구조 유사 판정 시 최소 태그 중첩 비율 |
+| `TAD_MCP_TASK_DEDUP_TEMPLATE_SIMILARITY` | `0.32` | 템플릿형 작업(예: 승인 라우팅) dedup 시 적용할 최소 유사도 |
 | `ROUTER_MAX_FALLBACK_RATIO` | `0.2` | Router 허용 최대 임베딩 fallback 비율 |
 | `ROUTER_MIN_EMBED_CALLS` | `5` | fallback 비율 판단 최소 임베딩 호출 수 |
 | `ROUTER_DISABLE_ON_FALLBACK_RATIO` | `false` | `true`면 fallback 비율 초과 시 Router 비활성화 |
 | `ROUTE_MIN_CONFIDENCE` | `0.35` | 라우팅 성공으로 인정할 최소 confidence |
 | `ROUTE_MIN_PROB_GAP` | `0.0` | top1-top2 확률 차이 최소값 (`/api/route` 게이트) |
+| `HIERARCHY_SIMPLE_THRESHOLD` | `0.45` | 단순 경로(`Master→Unit`) 선택 임계값 |
+| `HIERARCHY_MAX_ORCHESTRATORS` | `2` | 복합 경로에서 선택할 Orchestrator 최대 수 |
+| `HIERARCHY_MIN_ORCHESTRATOR_PROB` | `0.12` | Orchestrator 후보 채택 최소 확률 |
 
 MCP Tool 단계 타임아웃/속도 설정:
 - `TAD_MCP_TIMEOUT_MS=0` 또는 음수: LLM HTTP 타임아웃 비활성화
 - `TAD_MCP_BATCH_SIZE=10`: 30개 태스크 기준 3개 chunk로 분할
 - `TAD_MCP_MAX_WORKERS=4`: 최대 4개 chunk 병렬 처리
+- `TAD_MCP_ENABLE_TOOL_MERGE=true`: 동일 Agent 내 유사 태스크를 공유 Tool로 통합
+- `TAD_MCP_ENABLE_TASK_DEDUP=true`: LLM 호출 전 유사 태스크를 대표 태스크로 압축해 대기시간 감소
+- `TAD_MCP_TASK_DEDUP_LOOSE_SIMILARITY=0.45`: 거의 동일 태스크가 아니어도 구조적으로 유사하면 dedup 허용
+- `TAD_MCP_TASK_DEDUP_TEMPLATE_SIMILARITY=0.32`: 이름 템플릿/출력 구조가 같은 작업을 dedup 허용
 
 ---
 
@@ -393,6 +415,24 @@ MCP Tool 단계 타임아웃/속도 설정:
   --gap-thresholds 0.0,0.05,0.1,0.15
 ```
 
+## 계층 라우팅 계획 API
+
+```bash
+# Master→(Orchestrator)→Unit 계층 계획 조회
+curl -X POST http://localhost:8000/api/route-hierarchy \
+  -H "Content-Type: application/json" \
+  -d '{"output_id":"<analyze_output_id>","query":"환율 분석 그리고 리스크 보고서 작성"}'
+
+# 계층 계획 + 서브태스크별 Unit Tool 합성까지 한번에 실행
+curl -X POST http://localhost:8000/api/route-hierarchy-and-compose \
+  -H "Content-Type: application/json" \
+  -d '{"output_id":"<analyze_output_id>","query":"환율 분석 그리고 리스크 보고서 작성"}'
+```
+
+응답의 `hierarchical_plan.path_type`:
+- `master_unit`: 단순 쿼리 (직접 Unit 실행)
+- `master_orchestrator_unit`: 복합/모호 쿼리 (Orchestrator가 서브태스크 분해 후 Unit 배정)
+
 출력:
 - `output/eval/routing_ab_*.json` : 모드별 요약 지표
 - `output/eval/routing_ab_*.csv` : 쿼리별 상세 결과(정답 agent/group hit 포함)
@@ -405,6 +445,32 @@ MCP Tool 단계 타임아웃/속도 설정:
   --output data/samples/routing_queries.generated.json \
   --variants 3
 ```
+
+실무형 50개 태스크 샘플:
+- 입력 샘플: `data/samples/ai_opportunities_50_company.csv`
+- 생성 쿼리셋: `data/samples/routing_queries.50_company.generated.json`
+
+Tool 병합 A/B 평가:
+```bash
+.venv/bin/python -m tad_mapper.eval.tool_merge_ab \
+  --input data/samples/ai_opportunities_30.csv \
+  --queries data/samples/routing_queries.generated.json \
+  --merge-similarity 0.45 \
+  --max-tasks-per-tool 4
+```
+
+스윕(리더보드 자동 생성):
+```bash
+.venv/bin/python -m tad_mapper.eval.tool_merge_ab \
+  --input data/samples/ai_opportunities_30.csv \
+  --queries data/samples/routing_queries.generated.json \
+  --merge-similarities 0.45,0.5,0.55 \
+  --max-tasks-options 2,3,4
+```
+
+출력:
+- `output/eval/tool_merge_ab_*.json` : 병합 OFF/ON 비교 지표
+- `output/eval/tool_merge_ab_*.md` : Tool 수 절감 + 라우팅 일관성 요약
 
 ---
 

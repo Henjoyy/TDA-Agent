@@ -23,6 +23,9 @@ from pathlib import Path
 import numpy as np
 
 from config.settings import (
+    HIERARCHY_MAX_ORCHESTRATORS,
+    HIERARCHY_MIN_ORCHESTRATOR_PROB,
+    HIERARCHY_SIMPLE_THRESHOLD,
     OUTPUT_DIR,
     ROUTER_DISABLE_ON_FALLBACK_RATIO,
     ROUTER_MAX_FALLBACK_RATIO,
@@ -34,6 +37,7 @@ from config.settings import (
 from tad_mapper.engine.embedder import Embedder
 from tad_mapper.engine.feature_extractor import FeatureExtractor, TopologicalFeature
 from tad_mapper.engine.homotopy_router import HomotopyRouter
+from tad_mapper.engine.hierarchy_planner import HierarchyPlanner
 from tad_mapper.engine.query_manifold import QueryManifold
 from tad_mapper.engine.tda_analyzer import DiscoveredAgent, MapperGraph, TDAAnalyzer
 from tad_mapper.engine.tool_balancer import ToolBalancer
@@ -49,6 +53,10 @@ from tad_mapper.models.topology import (
     BalanceReport,
     CompositionPlan,
     CoverageMetrics,
+    HierarchicalExecutionPlan,
+    HierarchicalExecutionStep,
+    HierarchicalRoutingPlan,
+    HierarchyBlueprint,
     RoutingResult,
 )
 from tad_mapper.output.mcp_generator import MCPGenerator
@@ -80,6 +88,7 @@ class PipelineResult:
     balance_report: BalanceReport | None = None
     embedding_health: dict = field(default_factory=dict)
     router_block_reason: str = ""
+    hierarchy_blueprint: HierarchyBlueprint | None = None
 
     def summary(self) -> str:
         lines = [
@@ -106,6 +115,11 @@ class PipelineResult:
             )
         if self.router_block_reason:
             lines.append(f"Router 상태: 비활성화 ({self.router_block_reason})")
+        if self.hierarchy_blueprint:
+            orches = len(self.hierarchy_blueprint.orchestrator_to_units)
+            lines.append(
+                f"계층 구조: Master 1, Orchestrator {orches}개, Unit {len(self.agents)}개"
+            )
         return "\n".join(lines)
 
 
@@ -151,10 +165,16 @@ class TADMapperPipeline:
         self._report_gen = ReportGenerator()
         self._visualizer = TDAVisualizer()
         self._composer = ToolComposer()
+        self._hierarchy_planner = HierarchyPlanner(
+            simple_threshold=HIERARCHY_SIMPLE_THRESHOLD,
+            max_orchestrators=HIERARCHY_MAX_ORCHESTRATORS,
+            min_orchestrator_prob=HIERARCHY_MIN_ORCHESTRATOR_PROB,
+        )
 
         # 런타임 라우팅용 (run() 완료 후 초기화)
         self._router: HomotopyRouter | None = None
         self._manifold: QueryManifold | None = None
+        self._hierarchy: HierarchyBlueprint | None = None
         self._result: PipelineResult | None = None
         self._router_block_reason: str = ""
 
@@ -226,6 +246,7 @@ class TADMapperPipeline:
 
         # 라우팅 품질 보강: MCP Tool 의미 정보를 Agent에 주입
         self._enrich_agents_for_routing(agents, mcp_tools)
+        self._hierarchy = self._hierarchy_planner.build(agents)
 
         # 8. 리포트 생성 및 저장
         logger.info("[8/11] 리포트 생성 중...")
@@ -318,6 +339,7 @@ class TADMapperPipeline:
             balance_report=balance_report,
             embedding_health=embedding_health,
             router_block_reason=self._router_block_reason,
+            hierarchy_blueprint=self._hierarchy,
         )
         logger.info("\n%s", self._result.summary())
         return self._result
@@ -366,6 +388,119 @@ class TADMapperPipeline:
         routing = self.route_query(query_text)
         composition = self.compose_tools(query_text, routing.target_agent_id)
         return routing, composition
+
+    def plan_hierarchy(self, query_text: str) -> HierarchicalRoutingPlan:
+        """
+        Master → (Orchestrator) → Unit 계층 라우팅 계획을 생성합니다.
+        """
+        if self._result is None:
+            raise RuntimeError("먼저 run()을 실행하세요.")
+        if self._hierarchy is None:
+            raise RuntimeError("계층 구조가 초기화되지 않았습니다.")
+        routing = self.route_query(query_text)
+        return self._hierarchy_planner.plan(query_text, routing)
+
+    def route_hierarchy_and_compose(
+        self, query_text: str
+    ) -> HierarchicalExecutionPlan:
+        """
+        계층 라우팅 + 서브태스크별 Unit Tool 합성을 한번에 실행합니다.
+
+        - path_type=master_unit: 동일 Unit에 대해 query 단위 합성 1회
+        - path_type=master_orchestrator_unit: assignment별 subtask 합성
+        """
+        hierarchical = self.plan_hierarchy(query_text)
+        execution_steps: list[HierarchicalExecutionStep] = []
+
+        if hierarchical.path_type == "master_unit":
+            if not hierarchical.selected_unit_ids:
+                raise RuntimeError("계층 계획에 선택된 Unit이 없습니다.")
+            unit_id = hierarchical.selected_unit_ids[0]
+            composition = self.compose_tools(query_text, unit_id)
+            execution_steps.append(
+                HierarchicalExecutionStep(
+                    subtask_id="subtask_1",
+                    subtask_text=query_text,
+                    source_subtask_ids=["subtask_1"],
+                    source_subtask_texts=[query_text],
+                    unit_agent_id=unit_id,
+                    composition_plan=composition,
+                )
+            )
+        else:
+            merged_assignments = self._merge_assignments_for_execution(
+                hierarchical.assignments
+            )
+            for merged in merged_assignments:
+                composition = self.compose_tools(
+                    merged["merged_text"], merged["unit_agent_id"]
+                )
+                execution_steps.append(
+                    HierarchicalExecutionStep(
+                        subtask_id=merged["merged_subtask_id"],
+                        subtask_text=merged["merged_text"],
+                        source_subtask_ids=merged["source_ids"],
+                        source_subtask_texts=merged["source_texts"],
+                        orchestrator_id=merged["orchestrator_id"],
+                        unit_agent_id=merged["unit_agent_id"],
+                        composition_plan=composition,
+                    )
+                )
+
+        return HierarchicalExecutionPlan(
+            query_text=query_text,
+            hierarchical_routing=hierarchical,
+            execution_steps=execution_steps,
+        )
+
+    @staticmethod
+    def _merge_assignments_for_execution(assignments: list) -> list[dict]:
+        """
+        동일 Orchestrator/Unit으로 향하는 서브태스크를 하나로 병합합니다.
+
+        병합 목적:
+        - 동일 Unit에 대한 compose 호출 횟수 축소
+        - 공유 Tool 기반 실행 최적화
+        """
+        grouped: dict[tuple[str, str], list] = defaultdict(list)
+        for assignment in assignments:
+            key = (assignment.orchestrator_id, assignment.unit_agent_id)
+            grouped[key].append(assignment)
+
+        merged: list[dict] = []
+        for (orch_id, unit_id), rows in grouped.items():
+            source_ids = [r.subtask_id for r in rows]
+            source_texts = [r.subtask_text for r in rows]
+            if len(rows) == 1:
+                merged.append(
+                    {
+                        "merged_subtask_id": rows[0].subtask_id,
+                        "merged_text": rows[0].subtask_text,
+                        "source_ids": source_ids,
+                        "source_texts": source_texts,
+                        "orchestrator_id": orch_id,
+                        "unit_agent_id": unit_id,
+                    }
+                )
+                continue
+
+            # 동일 Unit 작업을 한 번에 처리할 수 있도록 합성 입력을 통합
+            merged_text = " 그리고 ".join(source_texts)
+            merged_id = "+".join(source_ids)
+            merged.append(
+                {
+                    "merged_subtask_id": merged_id,
+                    "merged_text": merged_text,
+                    "source_ids": source_ids,
+                    "source_texts": source_texts,
+                    "orchestrator_id": orch_id,
+                    "unit_agent_id": unit_id,
+                }
+            )
+
+        # 결정적 순서 보장
+        merged.sort(key=lambda x: (x["orchestrator_id"], x["unit_agent_id"], x["merged_subtask_id"]))
+        return merged
 
     @staticmethod
     def _enrich_agents_for_routing(
@@ -427,6 +562,10 @@ class TADMapperPipeline:
     @property
     def manifold(self) -> QueryManifold | None:
         return self._manifold
+
+    @property
+    def hierarchy(self) -> HierarchyBlueprint | None:
+        return self._hierarchy
 
     @property
     def router_block_reason(self) -> str:

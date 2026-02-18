@@ -6,7 +6,13 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 import api.main as api_main
-from tad_mapper.models.topology import RoutingResult
+from tad_mapper.models.topology import (
+    CompositionPlan,
+    HierarchicalExecutionPlan,
+    HierarchicalExecutionStep,
+    HierarchicalRoutingPlan,
+    RoutingResult,
+)
 
 
 class _ReadyRouter:
@@ -21,6 +27,37 @@ class _DummyPipeline:
 
     def route_query(self, query: str) -> RoutingResult:
         return self._routing_result
+
+    def plan_hierarchy(self, query: str) -> HierarchicalRoutingPlan:
+        return HierarchicalRoutingPlan(
+            query_text=query,
+            path_type="master_unit",
+            routing=self._routing_result,
+            complexity_score=0.2,
+            complexity_threshold=0.45,
+            selected_unit_ids=[self._routing_result.target_agent_id],
+            subtasks=[query],
+            assignments=[],
+            rationale=["test"],
+        )
+
+    def route_hierarchy_and_compose(self, query: str) -> HierarchicalExecutionPlan:
+        routing = self.plan_hierarchy(query)
+        return HierarchicalExecutionPlan(
+            query_text=query,
+            hierarchical_routing=routing,
+            execution_steps=[
+                HierarchicalExecutionStep(
+                    subtask_id="subtask_1",
+                    subtask_text=query,
+                    unit_agent_id=self._routing_result.target_agent_id,
+                    composition_plan=CompositionPlan(
+                        query_text=query,
+                        agent_id=self._routing_result.target_agent_id,
+                    ),
+                )
+            ],
+        )
 
 
 class _DummyResult:
@@ -120,3 +157,58 @@ def test_route_allows_ambiguous_when_fallback_ratio_high(monkeypatch):
     payload = res.json()
     assert payload["routing_policy"]["ambiguity_enforced"] is False
     assert payload["routing_policy"]["min_confidence"] == 0.1
+
+
+def test_route_hierarchy_returns_plan(monkeypatch):
+    routing = RoutingResult(
+        query_text="q",
+        target_agent_id="a1",
+        target_agent_name="Agent 1",
+        homotopy_class_id="class_a1",
+        confidence=0.8,
+        top_similarity=0.7,
+        routing_probabilities={"a1": 0.8, "a2": 0.2},
+        alternatives=[],
+        is_ambiguous=False,
+        ambiguity_reason="",
+    )
+    pipeline = _DummyPipeline(routing)
+    monkeypatch.setattr(
+        api_main, "_get_session", lambda output_id: (pipeline, _DummyResult(0.0))
+    )
+
+    client = TestClient(api_main.app)
+    res = client.post("/api/route-hierarchy", json={"output_id": "o1", "query": "test"})
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["hierarchical_plan"]["path_type"] == "master_unit"
+    assert payload["hierarchical_plan"]["selected_unit_ids"] == ["a1"]
+
+
+def test_route_hierarchy_and_compose_returns_execution(monkeypatch):
+    routing = RoutingResult(
+        query_text="q",
+        target_agent_id="a1",
+        target_agent_name="Agent 1",
+        homotopy_class_id="class_a1",
+        confidence=0.8,
+        top_similarity=0.7,
+        routing_probabilities={"a1": 0.8, "a2": 0.2},
+        alternatives=[],
+        is_ambiguous=False,
+        ambiguity_reason="",
+    )
+    pipeline = _DummyPipeline(routing)
+    monkeypatch.setattr(
+        api_main, "_get_session", lambda output_id: (pipeline, _DummyResult(0.0))
+    )
+
+    client = TestClient(api_main.app)
+    res = client.post(
+        "/api/route-hierarchy-and-compose",
+        json={"output_id": "o1", "query": "test"},
+    )
+    assert res.status_code == 200
+    payload = res.json()
+    assert payload["hierarchical_execution"]["hierarchical_routing"]["path_type"] == "master_unit"
+    assert payload["hierarchical_execution"]["total_steps"] == 1

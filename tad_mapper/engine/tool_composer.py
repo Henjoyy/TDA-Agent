@@ -26,6 +26,12 @@ from tad_mapper.models.topology import CompositionPlan, ToolExecutionStep
 logger = logging.getLogger(__name__)
 
 _GENERIC_PARAM_KEYS = {"query", "text", "input", "prompt", "question", "request"}
+_TOKEN_PATTERN = re.compile(r"[0-9A-Za-z가-힣]{2,}")
+_STOPWORDS = {
+    "tool", "task", "agent", "query", "request",
+    "도구", "태스크", "에이전트", "요청", "처리",
+}
+MAX_CANDIDATE_TOOLS = 8
 
 _COMPOSE_PROMPT = """
 당신은 AI 에이전트 시스템의 도구 합성 전문가입니다.
@@ -112,24 +118,27 @@ class ToolComposer:
         agent_name = agent.suggested_name or agent.agent_id
         agent_role = agent.suggested_role or "태스크 처리"
 
+        # 관련도 기반으로 후보 Tool을 축소해 합성 비용/오탐을 줄임
+        candidate_tools = self._select_candidate_tools(query, tools)
+
         # 의존성 그래프 사전 계산
-        dep_graph = self._build_dependency_graph(tools)
+        dep_graph = self._build_dependency_graph(candidate_tools)
 
         # LLM으로 합성 순서 결정
-        plan = self._llm_compose(query, agent_name, agent_role, tools)
+        plan = self._llm_compose(query, agent_name, agent_role, candidate_tools)
 
         # 의존성 그래프 추가
         plan.dependency_graph = dep_graph
 
         # 검증
-        errors = self._validate(plan, tools)
+        errors = self._validate(plan, candidate_tools)
         plan.is_valid = len(errors) == 0
         plan.validation_errors = errors
 
         if not plan.is_valid:
             logger.warning(f"합성 계획 검증 실패: {errors}")
             # 폴백: 위상 정렬 기반 자동 계획
-            plan = self._fallback_compose(query, agent, tools, dep_graph)
+            plan = self._fallback_compose(query, agent, candidate_tools, dep_graph)
 
         logger.info(
             f"합성 계획 생성 완료: {agent_name}, "
@@ -240,6 +249,72 @@ class ToolComposer:
             graph[tool_name] = sorted(set(deps))
 
         return graph
+
+    def _select_candidate_tools(
+        self,
+        query: str,
+        tools: list[MCPToolSchema],
+        max_candidates: int = MAX_CANDIDATE_TOOLS,
+    ) -> list[MCPToolSchema]:
+        """
+        쿼리와 관련 높은 Tool만 선별합니다.
+
+        - Tool 이름/설명
+        - annotations.source_task_names (공유 Tool 커버리지)
+        - 간단한 lexical 유사도
+        """
+        if len(tools) <= max_candidates:
+            return tools
+
+        query_tokens = self._tokenize(query)
+        if not query_tokens:
+            return tools[:max_candidates]
+
+        scored: list[tuple[MCPToolSchema, float]] = []
+        for tool in tools:
+            tokens = self._tool_tokens(tool)
+            if not tokens:
+                scored.append((tool, 0.0))
+                continue
+            inter = len(query_tokens & tokens)
+            coverage = inter / max(1, len(query_tokens))
+            precision = inter / max(1, len(tokens))
+            lexical = 0.8 * coverage + 0.2 * precision
+            conf = float(tool.annotations.confidence) if tool.annotations else 0.0
+            score = 0.9 * lexical + 0.1 * conf
+            scored.append((tool, score))
+
+        scored.sort(key=lambda x: x[1], reverse=True)
+        positives = [tool for tool, score in scored if score > 0]
+        selected = positives[:max_candidates]
+        if not selected:
+            selected = [tool for tool, _ in scored[:max_candidates]]
+
+        # 선택된 Tool의 의존성을 충족시키기 위해 선행 Tool을 보강
+        full_dep = self._build_dependency_graph(tools)
+        tool_map = {t.name: t for t in tools}
+        selected_names = {t.name for t in selected}
+        changed = True
+        while changed and len(selected_names) < max_candidates:
+            changed = False
+            for name in list(selected_names):
+                for dep in full_dep.get(name, []):
+                    if dep in selected_names:
+                        continue
+                    if dep in tool_map:
+                        selected_names.add(dep)
+                        changed = True
+                        if len(selected_names) >= max_candidates:
+                            break
+                if len(selected_names) >= max_candidates:
+                    break
+
+        rank = {tool.name: idx for idx, (tool, _) in enumerate(scored)}
+        ordered_names = sorted(
+            [name for name in selected_names if name in tool_map],
+            key=lambda name: rank.get(name, 10**9),
+        )
+        return [tool_map[name] for name in ordered_names]
 
     def _topological_sort(
         self, tools: list[MCPToolSchema], dep_graph: dict[str, list[str]]
@@ -357,3 +432,17 @@ class ToolComposer:
                 f"   필수: {', '.join(required) or '없음'}"
             )
         return "\n\n".join(lines)
+
+    @staticmethod
+    def _tokenize(text: str) -> set[str]:
+        return {
+            t.lower()
+            for t in _TOKEN_PATTERN.findall(text or "")
+            if t.lower() not in _STOPWORDS
+        }
+
+    def _tool_tokens(self, tool: MCPToolSchema) -> set[str]:
+        parts = [tool.name.replace("_", " "), tool.description]
+        if tool.annotations is not None:
+            parts.extend(tool.annotations.all_task_names())
+        return self._tokenize(" ".join(parts))

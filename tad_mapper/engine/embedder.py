@@ -52,6 +52,8 @@ class Embedder:
     """Gemini text-embedding-004로 태스크/쿼리 텍스트 임베딩 생성"""
 
     EMBEDDING_DIM = 768  # text-embedding-004 출력 차원
+    _FALLBACK_WARN_FIRST = 3
+    _FALLBACK_WARN_EVERY = 25
 
     def __init__(self) -> None:
         self._client = genai.Client(api_key=GEMINI_API_KEY)
@@ -62,6 +64,7 @@ class Embedder:
             active_model=EMBEDDING_MODEL,
             model_available=True,
         )
+        self._fallback_warn_count = 0
         self._validate_embedding_model()
 
     # ── 기존 메서드 ──────────────────────────────────────────────────────────
@@ -141,7 +144,13 @@ class Embedder:
                 self._health.model_validation_error = err
 
             self._health.fallback_calls += 1
-            logger.warning(f"임베딩 생성 실패: {e}. 결정적 fallback 벡터 사용.")
+            self._fallback_warn_count += 1
+            if self._should_log_fallback_warning(self._fallback_warn_count):
+                logger.warning(
+                    "임베딩 생성 실패: %s. 결정적 fallback 벡터 사용. (count=%s)",
+                    e,
+                    self._fallback_warn_count,
+                )
             return self._deterministic_fallback_vector(text)
 
     def _request_embedding(self, text: str, model: str) -> list[float]:
@@ -206,6 +215,12 @@ class Embedder:
     def _is_model_not_found_error(error: Exception) -> bool:
         message = str(error).lower()
         return "not_found" in message or "is not found" in message or "not supported" in message
+
+    @classmethod
+    def _should_log_fallback_warning(cls, count: int) -> bool:
+        if count <= cls._FALLBACK_WARN_FIRST:
+            return True
+        return count % cls._FALLBACK_WARN_EVERY == 0
 
     @staticmethod
     def _task_to_text(task: TaskStep) -> str:

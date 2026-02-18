@@ -268,21 +268,57 @@ class ToolBalancer:
                 reassigned.append(tool)
                 continue
 
-            source_task = tool.annotations.source_task_id
-            # 이 태스크를 가진 에이전트 탐색
-            new_agent_id = None
-            for agent_id, task_ids in agent_task_sets.items():
-                if source_task in task_ids:
-                    new_agent_id = agent_id
-                    break
+            source_task_ids = tool.annotations.all_task_ids()
+            source_task_names = tool.annotations.all_task_names()
+            if not source_task_ids:
+                source_task_ids = [tool.annotations.source_task_id]
+            task_name_by_id = {
+                tid: source_task_names[idx] if idx < len(source_task_names) else tool.annotations.source_task_name
+                for idx, tid in enumerate(source_task_ids)
+            }
 
-            if new_agent_id and new_agent_id != tool.annotations.assigned_agent:
-                # 새 에이전트로 재할당
-                new_tool = tool.model_copy(deep=True)
-                new_tool.annotations.assigned_agent = new_agent_id
-                reassigned.append(new_tool)
-            else:
+            # shared tool이면 여러 agent로 fan-out 될 수 있음
+            matched_by_agent: dict[str, list[str]] = {}
+            for source_task in source_task_ids:
+                for agent_id, task_ids in agent_task_sets.items():
+                    if source_task in task_ids:
+                        matched_by_agent.setdefault(agent_id, []).append(source_task)
+
+            if not matched_by_agent:
                 reassigned.append(tool)
+                continue
+
+            if len(matched_by_agent) == 1:
+                new_agent_id = next(iter(matched_by_agent))
+                if new_agent_id != tool.annotations.assigned_agent:
+                    new_tool = tool.model_copy(deep=True)
+                    new_tool.annotations.assigned_agent = new_agent_id
+                    task_ids = list(dict.fromkeys(matched_by_agent[new_agent_id]))
+                    new_tool.annotations.source_task_ids = task_ids
+                    new_tool.annotations.source_task_id = task_ids[0]
+                    new_tool.annotations.source_task_names = [
+                        task_name_by_id.get(tid, tool.annotations.source_task_name)
+                        for tid in task_ids
+                    ]
+                    new_tool.annotations.source_task_name = new_tool.annotations.source_task_names[0]
+                    reassigned.append(new_tool)
+                else:
+                    reassigned.append(tool)
+                continue
+
+            # 여러 agent에 걸치는 shared tool은 agent별 clone 생성
+            for agent_id, task_ids in matched_by_agent.items():
+                clone = tool.model_copy(deep=True)
+                clone.annotations.assigned_agent = agent_id
+                uniq_task_ids = list(dict.fromkeys(task_ids))
+                clone.annotations.source_task_ids = uniq_task_ids
+                clone.annotations.source_task_id = uniq_task_ids[0]
+                clone.annotations.source_task_names = [
+                    task_name_by_id.get(tid, tool.annotations.source_task_name)
+                    for tid in uniq_task_ids
+                ]
+                clone.annotations.source_task_name = clone.annotations.source_task_names[0]
+                reassigned.append(clone)
 
         return reassigned
 

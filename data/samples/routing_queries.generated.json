@@ -1,0 +1,452 @@
+[
+  {
+    "query": "글로벌 관세율 조회 작업을 처리해줘",
+    "label": "글로벌 관세율 조회",
+    "expected_task_id": "task_001"
+  },
+  {
+    "query": "글로벌 관세율 조회 해줘",
+    "label": "글로벌 관세율 조회",
+    "expected_task_id": "task_001"
+  },
+  {
+    "query": "HS Code 기반으로 전 세계 국가별 관세율 및 협정 세율을 조회합니다. 관련 요청을 처리해줘",
+    "label": "글로벌 관세율 조회",
+    "expected_task_id": "task_001"
+  },
+  {
+    "query": "수출입 통계 분석 작업을 처리해줘",
+    "label": "수출입 통계 분석",
+    "expected_task_id": "task_002"
+  },
+  {
+    "query": "수출입 통계 분석 해줘",
+    "label": "수출입 통계 분석",
+    "expected_task_id": "task_002"
+  },
+  {
+    "query": "특정 기간 동안의 품목별/국가별 수출입 통계를 분석하여 리포트를 생성합니다. 관련 요청을 처리해줘",
+    "label": "수출입 통계 분석",
+    "expected_task_id": "task_002"
+  },
+  {
+    "query": "선적 서류 자동 검증 작업을 처리해줘",
+    "label": "선적 서류 자동 검증",
+    "expected_task_id": "task_003"
+  },
+  {
+    "query": "선적 서류 자동 검증 해줘",
+    "label": "선적 서류 자동 검증",
+    "expected_task_id": "task_003"
+  },
+  {
+    "query": "인보이스와 패킹리스트의 데이터 불일치(중량 관련 요청을 처리해줘",
+    "label": "선적 서류 자동 검증",
+    "expected_task_id": "task_003"
+  },
+  {
+    "query": "물류비 견적 비교 작업을 처리해줘",
+    "label": "물류비 견적 비교",
+    "expected_task_id": "task_004"
+  },
+  {
+    "query": "물류비 견적 비교 해줘",
+    "label": "물류비 견적 비교",
+    "expected_task_id": "task_004"
+  },
+  {
+    "query": "출발지/도착지 및 화물 정보를 입력하면 여러 포워더의 예상 견적을 비교 분... 관련 요청을 처리해줘",
+    "label": "물류비 견적 비교",
+    "expected_task_id": "task_004"
+  },
+  {
+    "query": "바이어 이메일 초안 작성 작업을 처리해줘",
+    "label": "바이어 이메일 초안 작성",
+    "expected_task_id": "task_005"
+  },
+  {
+    "query": "바이어 이메일 초안 작성 해줘",
+    "label": "바이어 이메일 초안 작성",
+    "expected_task_id": "task_005"
+  },
+  {
+    "query": "신규 바이어에게 보낼 제품 소개 이메일 초안을 상대방 문화와 언어에 맞춰 ... 관련 요청을 처리해줘",
+    "label": "바이어 이메일 초안 작성",
+    "expected_task_id": "task_005"
+  },
+  {
+    "query": "환율 변동 알림 작업을 처리해줘",
+    "label": "환율 변동 알림",
+    "expected_task_id": "task_006"
+  },
+  {
+    "query": "환율 변동 알림 해줘",
+    "label": "환율 변동 알림",
+    "expected_task_id": "task_006"
+  },
+  {
+    "query": "설정한 목표 환율 도달 시 또는 급격한 변동 감지 시 담당자에게 즉시 알림... 관련 요청을 처리해줘",
+    "label": "환율 변동 알림",
+    "expected_task_id": "task_006"
+  },
+  {
+    "query": "HS Code 자동 분류 작업을 처리해줘",
+    "label": "HS Code 자동 분류",
+    "expected_task_id": "task_007"
+  },
+  {
+    "query": "HS Code 자동 분류 해줘",
+    "label": "HS Code 자동 분류",
+    "expected_task_id": "task_007"
+  },
+  {
+    "query": "제품 설명과 이미지를 분석하여 가장 적절한 HS Code를 추천하고 분류 ... 관련 요청을 처리해줘",
+    "label": "HS Code 자동 분류",
+    "expected_task_id": "task_007"
+  },
+  {
+    "query": "해상 운임 예측 작업을 처리해줘",
+    "label": "해상 운임 예측",
+    "expected_task_id": "task_008"
+  },
+  {
+    "query": "해상 운임 예측 해줘",
+    "label": "해상 운임 예측",
+    "expected_task_id": "task_008"
+  },
+  {
+    "query": "과거 운임 데이터와 시장 지수(BDI 등)를 기반으로 향후 3개월간의 해상... 관련 요청을 처리해줘",
+    "label": "해상 운임 예측",
+    "expected_task_id": "task_008"
+  },
+  {
+    "query": "신용장(L/C) 독소조항 검토 작업을 처리해줘",
+    "label": "신용장(L/C) 독소조항 검토",
+    "expected_task_id": "task_009"
+  },
+  {
+    "query": "신용장(L/C) 독소조항 검토 해줘",
+    "label": "신용장(L/C) 독소조항 검토",
+    "expected_task_id": "task_009"
+  },
+  {
+    "query": "신용장 문구를 분석하여 불리하거나 위험한 독소 조항이 있는지 검토하고 수정... 관련 요청을 처리해줘",
+    "label": "신용장(L/C) 독소조항 검토",
+    "expected_task_id": "task_009"
+  },
+  {
+    "query": "경쟁사 동향 뉴스 요약 작업을 처리해줘",
+    "label": "경쟁사 동향 뉴스 요약",
+    "expected_task_id": "task_010"
+  },
+  {
+    "query": "경쟁사 동향 뉴스 요약 해줘",
+    "label": "경쟁사 동향 뉴스 요약",
+    "expected_task_id": "task_010"
+  },
+  {
+    "query": "주요 경쟁사의 신제품 출시 관련 요청을 처리해줘",
+    "label": "경쟁사 동향 뉴스 요약",
+    "expected_task_id": "task_010"
+  },
+  {
+    "query": "AI 챗봇 고객 상담 작업을 처리해줘",
+    "label": "AI 챗봇 고객 상담",
+    "expected_task_id": "task_011"
+  },
+  {
+    "query": "AI 챗봇 고객 상담 해줘",
+    "label": "AI 챗봇 고객 상담",
+    "expected_task_id": "task_011"
+  },
+  {
+    "query": "무역박람회 부스 방문객의 일반적인 질문(가격 관련 요청을 처리해줘",
+    "label": "AI 챗봇 고객 상담",
+    "expected_task_id": "task_011"
+  },
+  {
+    "query": "거래처 신용도 평가 작업을 처리해줘",
+    "label": "거래처 신용도 평가",
+    "expected_task_id": "task_012"
+  },
+  {
+    "query": "거래처 신용도 평가 해줘",
+    "label": "거래처 신용도 평가",
+    "expected_task_id": "task_012"
+  },
+  {
+    "query": "해외 거래처의 재무제표와 신용 리포트를 분석하여 거래 위험 등급을 산출합니다. 관련 요청을 처리해줘",
+    "label": "거래처 신용도 평가",
+    "expected_task_id": "task_012"
+  },
+  {
+    "query": "원산지 증명서(CO) 발급 신청 작업을 처리해줘",
+    "label": "원산지 증명서(CO) 발급 신청",
+    "expected_task_id": "task_013"
+  },
+  {
+    "query": "원산지 증명서(CO) 발급 신청 해줘",
+    "label": "원산지 증명서(CO) 발급 신청",
+    "expected_task_id": "task_013"
+  },
+  {
+    "query": "수출 데이터 기반으로 원산지 증명서 발급 신청서를 자동으로 작성하고 제출합니다. 관련 요청을 처리해줘",
+    "label": "원산지 증명서(CO) 발급 신청",
+    "expected_task_id": "task_013"
+  },
+  {
+    "query": "다국어 계약서 번역 작업을 처리해줘",
+    "label": "다국어 계약서 번역",
+    "expected_task_id": "task_014"
+  },
+  {
+    "query": "다국어 계약서 번역 해줘",
+    "label": "다국어 계약서 번역",
+    "expected_task_id": "task_014"
+  },
+  {
+    "query": "무역 계약서를 법률 용어를 고려하여 지정된 언어로 초벌 번역합니다. 관련 요청을 처리해줘",
+    "label": "다국어 계약서 번역",
+    "expected_task_id": "task_014"
+  },
+  {
+    "query": "창고 재고 최적화 제안 작업을 처리해줘",
+    "label": "창고 재고 최적화 제안",
+    "expected_task_id": "task_015"
+  },
+  {
+    "query": "창고 재고 최적화 제안 해줘",
+    "label": "창고 재고 최적화 제안",
+    "expected_task_id": "task_015"
+  },
+  {
+    "query": "현재 재고량과 출고 패턴을 분석하여 적정 안전 재고량을 제안하고 발주 시점... 관련 요청을 처리해줘",
+    "label": "창고 재고 최적화 제안",
+    "expected_task_id": "task_015"
+  },
+  {
+    "query": "적하 보험료 산출 작업을 처리해줘",
+    "label": "적하 보험료 산출",
+    "expected_task_id": "task_016"
+  },
+  {
+    "query": "적하 보험료 산출 해줘",
+    "label": "적하 보험료 산출",
+    "expected_task_id": "task_016"
+  },
+  {
+    "query": "화물 가액과 운송 조건을 기반으로 예상 적하 보험료를 산출합니다. 관련 요청을 처리해줘",
+    "label": "적하 보험료 산출",
+    "expected_task_id": "task_016"
+  },
+  {
+    "query": "해외 전시회 추천 작업을 처리해줘",
+    "label": "해외 전시회 추천",
+    "expected_task_id": "task_017"
+  },
+  {
+    "query": "해외 전시회 추천 해줘",
+    "label": "해외 전시회 추천",
+    "expected_task_id": "task_017"
+  },
+  {
+    "query": "우리 회사의 주력 품목과 타겟 시장에 적합한 해외 유명 전시회를 추천합니다. 관련 요청을 처리해줘",
+    "label": "해외 전시회 추천",
+    "expected_task_id": "task_017"
+  },
+  {
+    "query": "바이어 미팅 일정 조율 작업을 처리해줘",
+    "label": "바이어 미팅 일정 조율",
+    "expected_task_id": "task_018"
+  },
+  {
+    "query": "바이어 미팅 일정 조율 해줘",
+    "label": "바이어 미팅 일정 조율",
+    "expected_task_id": "task_018"
+  },
+  {
+    "query": "시차가 있는 해외 바이어와의 화상 회의 가능한 교집합 시간을 찾아 미팅을 ... 관련 요청을 처리해줘",
+    "label": "바이어 미팅 일정 조율",
+    "expected_task_id": "task_018"
+  },
+  {
+    "query": "공급망 리스크 모니터링 작업을 처리해줘",
+    "label": "공급망 리스크 모니터링",
+    "expected_task_id": "task_019"
+  },
+  {
+    "query": "공급망 리스크 모니터링 해줘",
+    "label": "공급망 리스크 모니터링",
+    "expected_task_id": "task_019"
+  },
+  {
+    "query": "주요 공급망 국가의 자연재해 관련 요청을 처리해줘",
+    "label": "공급망 리스크 모니터링",
+    "expected_task_id": "task_019"
+  },
+  {
+    "query": "FTA 혜택 조회 작업을 처리해줘",
+    "label": "FTA 혜택 조회",
+    "expected_task_id": "task_020"
+  },
+  {
+    "query": "FTA 혜택 조회 해줘",
+    "label": "FTA 혜택 조회",
+    "expected_task_id": "task_020"
+  },
+  {
+    "query": "특정 품목 수출 시 활용 가능한 FTA 협정과 예상 절세액을 조회합니다. 관련 요청을 처리해줘",
+    "label": "FTA 혜택 조회",
+    "expected_task_id": "task_020"
+  },
+  {
+    "query": "제품 카탈로그 이미지 생성 작업을 처리해줘",
+    "label": "제품 카탈로그 이미지 생성",
+    "expected_task_id": "task_021"
+  },
+  {
+    "query": "제품 카탈로그 이미지 생성 해줘",
+    "label": "제품 카탈로그 이미지 생성",
+    "expected_task_id": "task_021"
+  },
+  {
+    "query": "제품 컨셉 설명을 바탕으로 마케팅용 제품 연출 이미지를 생성합니다. 관련 요청을 처리해줘",
+    "label": "제품 카탈로그 이미지 생성",
+    "expected_task_id": "task_021"
+  },
+  {
+    "query": "송장(Invoice) 데이터 추출(OCR) 작업을 처리해줘",
+    "label": "송장(Invoice) 데이터 추출(OCR)",
+    "expected_task_id": "task_022"
+  },
+  {
+    "query": "송장(Invoice) 데이터 추출(OCR) 해줘",
+    "label": "송장(Invoice) 데이터 추출(OCR)",
+    "expected_task_id": "task_022"
+  },
+  {
+    "query": "PDF나 이미지 형태의 인보이스에서 날짜 관련 요청을 처리해줘",
+    "label": "송장(Invoice) 데이터 추출(OCR)",
+    "expected_task_id": "task_022"
+  },
+  {
+    "query": "컨테이너 적재 시뮬레이션 작업을 처리해줘",
+    "label": "컨테이너 적재 시뮬레이션",
+    "expected_task_id": "task_023"
+  },
+  {
+    "query": "컨테이너 적재 시뮬레이션 해줘",
+    "label": "컨테이너 적재 시뮬레이션",
+    "expected_task_id": "task_023"
+  },
+  {
+    "query": "포장 규격과 수량을 입력하면 컨테이너 적재 효율을 극대화하는 적재 패턴을 ... 관련 요청을 처리해줘",
+    "label": "컨테이너 적재 시뮬레이션",
+    "expected_task_id": "task_023"
+  },
+  {
+    "query": "해외 바이어 발굴 작업을 처리해줘",
+    "label": "해외 바이어 발굴",
+    "expected_task_id": "task_024"
+  },
+  {
+    "query": "해외 바이어 발굴 해줘",
+    "label": "해외 바이어 발굴",
+    "expected_task_id": "task_024"
+  },
+  {
+    "query": "특정 품목을 수입하는 해외 잠재 바이어 리스트를 무역 데이터를 통해 발굴합니다. 관련 요청을 처리해줘",
+    "label": "해외 바이어 발굴",
+    "expected_task_id": "task_024"
+  },
+  {
+    "query": "규제 준수(Compliance) 체크 작업을 처리해줘",
+    "label": "규제 준수(Compliance) 체크",
+    "expected_task_id": "task_025"
+  },
+  {
+    "query": "규제 준수(Compliance) 체크 해줘",
+    "label": "규제 준수(Compliance) 체크",
+    "expected_task_id": "task_025"
+  },
+  {
+    "query": "수출 예정 품목이 타겟 국가의 수입 금지 품목이거나 전략 물자인지 사전 스... 관련 요청을 처리해줘",
+    "label": "규제 준수(Compliance) 체크",
+    "expected_task_id": "task_025"
+  },
+  {
+    "query": "SNS 마케팅 문구 작성 작업을 처리해줘",
+    "label": "SNS 마케팅 문구 작성",
+    "expected_task_id": "task_026"
+  },
+  {
+    "query": "SNS 마케팅 문구 작성 해줘",
+    "label": "SNS 마케팅 문구 작성",
+    "expected_task_id": "task_026"
+  },
+  {
+    "query": "제품 홍보를 위한 링크드인/페이스북용 마케팅 문구와 해시태그를 자동 생성합니다. 관련 요청을 처리해줘",
+    "label": "SNS 마케팅 문구 작성",
+    "expected_task_id": "task_026"
+  },
+  {
+    "query": "클레임 대응 메일 작성 작업을 처리해줘",
+    "label": "클레임 대응 메일 작성",
+    "expected_task_id": "task_027"
+  },
+  {
+    "query": "클레임 대응 메일 작성 해줘",
+    "label": "클레임 대응 메일 작성",
+    "expected_task_id": "task_027"
+  },
+  {
+    "query": "제품 불량 등 클레임 접수 시 관련 요청을 처리해줘",
+    "label": "클레임 대응 메일 작성",
+    "expected_task_id": "task_027"
+  },
+  {
+    "query": "시장 진입 전략 리포트 작업을 처리해줘",
+    "label": "시장 진입 전략 리포트",
+    "expected_task_id": "task_028"
+  },
+  {
+    "query": "시장 진입 전략 리포트 해줘",
+    "label": "시장 진입 전략 리포트",
+    "expected_task_id": "task_028"
+  },
+  {
+    "query": "타겟 국가의 경제 지표 관련 요청을 처리해줘",
+    "label": "시장 진입 전략 리포트",
+    "expected_task_id": "task_028"
+  },
+  {
+    "query": "수입 통관 진행상황 추적 작업을 처리해줘",
+    "label": "수입 통관 진행상황 추적",
+    "expected_task_id": "task_029"
+  },
+  {
+    "query": "수입 통관 진행상황 추적 해줘",
+    "label": "수입 통관 진행상황 추적",
+    "expected_task_id": "task_029"
+  },
+  {
+    "query": "B/L 번호를 입력하면 관세청 유니패스와 연동하여 현재 통관 진행 단계를 ... 관련 요청을 처리해줘",
+    "label": "수입 통관 진행상황 추적",
+    "expected_task_id": "task_029"
+  },
+  {
+    "query": "회의록 자동 요약 및 할일 추출 작업을 처리해줘",
+    "label": "회의록 자동 요약 및 할일 추출",
+    "expected_task_id": "task_030"
+  },
+  {
+    "query": "회의록 자동 요약 및 할일 추출 해줘",
+    "label": "회의록 자동 요약 및 할일 추출",
+    "expected_task_id": "task_030"
+  },
+  {
+    "query": "바이어와의 미팅 녹취록이나 텍스트를 분석하여 핵심 내용 요약 및 Actio... 관련 요청을 처리해줘",
+    "label": "회의록 자동 요약 및 할일 추출",
+    "expected_task_id": "task_030"
+  }
+]

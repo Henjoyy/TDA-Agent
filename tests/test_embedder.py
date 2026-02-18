@@ -40,3 +40,10 @@ def test_embedder_switches_model_when_primary_not_found():
     assert vec is not None
     assert embedder._health.active_model == "backup"
     assert embedder._health.model_available is True
+
+
+def test_fallback_warning_is_rate_limited():
+    assert Embedder._should_log_fallback_warning(1) is True
+    assert Embedder._should_log_fallback_warning(3) is True
+    assert Embedder._should_log_fallback_warning(4) is False
+    assert Embedder._should_log_fallback_warning(25) is True

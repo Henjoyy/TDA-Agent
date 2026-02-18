@@ -43,6 +43,11 @@ ROUTER_MAX_FALLBACK_RATIO: float = float(os.getenv("ROUTER_MAX_FALLBACK_RATIO", 
 ROUTER_MIN_EMBED_CALLS: int = int(os.getenv("ROUTER_MIN_EMBED_CALLS", "5"))
 ROUTE_MIN_CONFIDENCE: float = float(os.getenv("ROUTE_MIN_CONFIDENCE", "0.35"))
 ROUTE_MIN_PROB_GAP: float = float(os.getenv("ROUTE_MIN_PROB_GAP", "0.0"))
+HIERARCHY_SIMPLE_THRESHOLD: float = float(os.getenv("HIERARCHY_SIMPLE_THRESHOLD", "0.45"))
+HIERARCHY_MAX_ORCHESTRATORS: int = int(os.getenv("HIERARCHY_MAX_ORCHESTRATORS", "2"))
+HIERARCHY_MIN_ORCHESTRATOR_PROB: float = float(
+    os.getenv("HIERARCHY_MIN_ORCHESTRATOR_PROB", "0.12")
+)
 ROUTER_DISABLE_ON_FALLBACK_RATIO: bool = os.getenv(
     "ROUTER_DISABLE_ON_FALLBACK_RATIO", "false"
 ).strip().lower() in {"1", "true", "yes", "y", "on"}

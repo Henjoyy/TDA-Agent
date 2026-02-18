@@ -181,6 +181,39 @@ class TestRebalance:
         assert report.rebalanced is False
         assert len(new_agents) == len(agents)
 
+    def test_reassign_shared_tool_fanout_to_multiple_agents(self):
+        """shared tool(source_task_ids)이 분할 시 여러 Agent로 복제 재할당되어야 함"""
+        balancer = ToolBalancer(max_tools_per_agent=3)
+        new_agents = [
+            make_agent("agent_0_split_0", ["t1"]),
+            make_agent("agent_0_split_1", ["t2"]),
+        ]
+        shared = MCPToolSchema(
+            name="analyze_trade_risk",
+            description="shared",
+            inputSchema=MCPInputSchema(
+                properties={"query": MCPPropertySchema(type="string", description="입력")},
+                required=["query"],
+            ),
+            annotations=MCPToolAnnotations(
+                assigned_agent="agent_0",
+                source_task_id="t1",
+                source_task_name="Task t1",
+                source_task_ids=["t1", "t2"],
+                source_task_names=["Task t1", "Task t2"],
+                confidence=0.8,
+            ),
+        )
+
+        reassigned = balancer._reassign_tools(
+            new_agents,
+            [shared],
+            split_map={"agent_0": ["agent_0_split_0", "agent_0_split_1"]},
+        )
+        assert len(reassigned) == 2
+        assigned_ids = {t.annotations.assigned_agent for t in reassigned if t.annotations}
+        assert assigned_ids == {"agent_0_split_0", "agent_0_split_1"}
+
 
 # ── 테스트: 에이전트 분리 ────────────────────────────────────────────────────
 

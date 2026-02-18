@@ -24,7 +24,25 @@ class MCPToolAnnotations(BaseModel):
     assigned_agent: str
     source_task_id: str
     source_task_name: str
+    source_task_ids: list[str] = Field(
+        default_factory=list,
+        description="이 Tool이 커버하는 원본 태스크 ID 목록(공유 Tool용)",
+    )
+    source_task_names: list[str] = Field(
+        default_factory=list,
+        description="이 Tool이 커버하는 원본 태스크 이름 목록(공유 Tool용)",
+    )
     confidence: float
+
+    def all_task_ids(self) -> list[str]:
+        if self.source_task_ids:
+            return list(dict.fromkeys(self.source_task_ids))
+        return [self.source_task_id] if self.source_task_id else []
+
+    def all_task_names(self) -> list[str]:
+        if self.source_task_names:
+            return list(dict.fromkeys(self.source_task_names))
+        return [self.source_task_name] if self.source_task_name else []
 
 
 class MCPToolSchema(BaseModel):
