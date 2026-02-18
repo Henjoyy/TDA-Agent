@@ -341,12 +341,18 @@ task_001,태스크명,설명,user,입력1;입력2,출력1,,태그1;태그2
 | `EMBEDDING_MODEL_CANDIDATES` | `gemini-embedding-001,models/text-embedding-004,text-embedding-004` | 임베딩 모델 자동 전환 후보 |
 | `TDA_N_INTERVALS` | `10` | Mapper 구간 수 |
 | `TDA_OVERLAP_FRAC` | `0.3` | 구간 오버랩 비율 |
-| `TAD_MCP_TIMEOUT_MS` | `45000` | MCP Tool 생성 LLM 요청 타임아웃(ms) |
-| `TAD_MCP_BATCH_SIZE` | `12` | MCP Tool 생성 chunk 크기 |
-| `TAD_MCP_RETRIES` | `1` | MCP Tool 생성 실패 시 재시도 횟수 |
+| `TAD_MCP_TIMEOUT_MS` | `0` | MCP Tool 생성 LLM 요청 타임아웃(ms), `0`/음수=무제한 |
+| `TAD_MCP_BATCH_SIZE` | `10` | MCP Tool 생성 chunk 크기 |
+| `TAD_MCP_RETRIES` | `0` | MCP Tool 생성 실패 시 재시도 횟수 |
+| `TAD_MCP_MAX_WORKERS` | `4` | MCP Tool chunk 병렬 처리 워커 수 |
 | `ROUTER_MAX_FALLBACK_RATIO` | `0.2` | Router 허용 최대 임베딩 fallback 비율 |
 | `ROUTER_MIN_EMBED_CALLS` | `5` | fallback 비율 판단 최소 임베딩 호출 수 |
 | `ROUTE_MIN_CONFIDENCE` | `0.35` | 라우팅 성공으로 인정할 최소 confidence |
+
+MCP Tool 단계 타임아웃/속도 설정:
+- `TAD_MCP_TIMEOUT_MS=0` 또는 음수: LLM HTTP 타임아웃 비활성화
+- `TAD_MCP_BATCH_SIZE=10`: 30개 태스크 기준 3개 chunk로 분할
+- `TAD_MCP_MAX_WORKERS=4`: 최대 4개 chunk 병렬 처리
 
 ---
 

@@ -4,6 +4,7 @@ MCPGenerator 안정성 테스트
 from __future__ import annotations
 
 import numpy as np
+from concurrent.futures import Future
 
 from tad_mapper.engine.tda_analyzer import DiscoveredAgent
 from tad_mapper.models.journey import TaskStep, UserJourney
@@ -89,3 +90,71 @@ def test_generate_batch_retry_is_bounded(monkeypatch):
 
     assert result == {}
     assert generator._client.models.calls == 3
+
+
+def test_timeout_can_be_disabled(monkeypatch):
+    captured: dict[str, object] = {}
+
+    class DummyClient:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            self.models = None
+
+    monkeypatch.setenv("TAD_MCP_TIMEOUT_MS", "0")
+    monkeypatch.setattr("tad_mapper.output.mcp_generator.genai.Client", DummyClient)
+
+    generator = MCPGenerator()
+
+    assert generator._timeout_ms is None
+    assert "http_options" not in captured
+
+
+def test_generate_parallel_chunks_when_workers_gt_one(monkeypatch):
+    journey = make_journey(4)
+    agent = make_agent([s.id for s in journey.steps])
+
+    generator = MCPGenerator.__new__(MCPGenerator)
+    generator._batch_size = 1
+    generator._timeout_ms = None
+    generator._max_retries = 0
+    generator._max_workers = 4
+
+    executor_used = {"max_workers": 0}
+
+    class FakeExecutor:
+        def __init__(self, max_workers):
+            executor_used["max_workers"] = max_workers
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def submit(self, fn, *args, **kwargs):
+            fut = Future()
+            fut.set_result(fn(*args, **kwargs))
+            return fut
+
+    def fake_generate_batch(tasks, task_to_agent):
+        task = tasks[0]
+        return {
+            task.id: {
+                "name": f"tool_{task.id}",
+                "description": "desc",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "q"},
+                    },
+                    "required": ["query"],
+                },
+            }
+        }
+
+    generator._generate_batch = fake_generate_batch
+    monkeypatch.setattr("tad_mapper.output.mcp_generator.ThreadPoolExecutor", FakeExecutor)
+    tools = generator.generate(journey, [agent])
+
+    assert len(tools) == len(journey.steps)
+    assert executor_used["max_workers"] == len(journey.steps)

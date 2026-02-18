@@ -8,7 +8,8 @@ const AGENT_COLORS = [
 let selectedFile = null;
 let currentResult = null;
 let currentOutputId = null;  // 세션 ID (라우팅/합성 API용)
-const ANALYZE_TIMEOUT_MS = 120000;
+// 0 이하이면 브라우저 측 강제 타임아웃을 적용하지 않음
+const ANALYZE_TIMEOUT_MS = 0;
 
 // ── File Upload ──────────────────────────────────────────────
 const uploadArea = document.getElementById('uploadArea');
@@ -62,7 +63,9 @@ async function runAnalysis() {
   if (nAgents) formData.append('n_agents', nAgents);
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), ANALYZE_TIMEOUT_MS);
+  const timeoutId = ANALYZE_TIMEOUT_MS > 0
+    ? setTimeout(() => controller.abort(), ANALYZE_TIMEOUT_MS)
+    : null;
 
   try {
     const res = await fetch('/api/analyze', {
@@ -70,7 +73,7 @@ async function runAnalysis() {
       body: formData,
       signal: controller.signal,
     });
-    clearTimeout(timeoutId);
+    if (timeoutId) clearTimeout(timeoutId);
     if (!res.ok) {
       const err = await res.json();
       throw new Error(extractErrorMessage(err, '분석 실패'));
@@ -81,7 +84,7 @@ async function runAnalysis() {
     showLoading(false);
     renderResults(data);
   } catch (e) {
-    clearTimeout(timeoutId);
+    if (timeoutId) clearTimeout(timeoutId);
     showLoading(false);
     if (e.name === 'AbortError') {
       alert(`오류: 분석 요청 시간(${ANALYZE_TIMEOUT_MS / 1000}초)을 초과했습니다. 태스크 수를 줄이거나 다시 시도해주세요.`);

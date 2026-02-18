@@ -9,6 +9,7 @@ import logging
 import os
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import google.genai as genai
 from google.genai import types
@@ -25,9 +26,11 @@ from tad_mapper.models.mcp_tool import (
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MCP_TIMEOUT_MS = 45_000
-DEFAULT_MCP_BATCH_SIZE = 12
-DEFAULT_MCP_RETRIES = 1
+# 기본값을 "실무 우선(타임아웃 방지 + 속도)"으로 조정
+DEFAULT_MCP_TIMEOUT_MS = 0
+DEFAULT_MCP_BATCH_SIZE = 10
+DEFAULT_MCP_RETRIES = 0
+DEFAULT_MCP_MAX_WORKERS = 4
 
 # ── 배치 프롬프트 ─────────────────────────────────────────────────────────────
 
@@ -37,8 +40,9 @@ _BATCH_MCP_PROMPT = """\
 
 ## 설계 규칙
 1. tool name은 snake_case, 동사_명사 형태 (예: get_export_stats, analyze_trade_trend)
-2. 파라미터는 실제로 필요한 것만 포함하고 명확한 description 작성 (한국어 가능)
+2. 파라미터는 실제로 필요한 것만 포함하고, description은 1문장으로 짧게 작성
 3. required 배열에 필수 파라미터 명시
+4. 출력은 간결하게, 불필요한 설명/중복 문구 금지
 
 ## 태스크 목록
 {task_list}
@@ -62,31 +66,29 @@ _BATCH_MCP_PROMPT = """\
 """
 
 _TASK_ITEM_TEMPLATE = """\
-[Task {idx}] task_id={task_id}
-  이름: {name}
-  설명: {description}
-  입력 데이터: {input_data}
-  출력 데이터: {output_data}
-  소속 Agent: {agent_name} ({agent_role})"""
+[Task {idx}] id={task_id} | name={name} | desc={description} | in={input_data} | out={output_data} | agent={agent_name}"""
 
 
 class MCPGenerator:
     """Gemini LLM 기반 MCP Tool 스키마 자동 생성 (배치 처리)"""
 
     def __init__(self) -> None:
-        self._timeout_ms = max(
-            1_000, int(os.getenv("TAD_MCP_TIMEOUT_MS", str(DEFAULT_MCP_TIMEOUT_MS)))
-        )
+        raw_timeout_ms = int(os.getenv("TAD_MCP_TIMEOUT_MS", str(DEFAULT_MCP_TIMEOUT_MS)))
+        self._timeout_ms = None if raw_timeout_ms <= 0 else max(1_000, raw_timeout_ms)
         self._batch_size = max(
             1, int(os.getenv("TAD_MCP_BATCH_SIZE", str(DEFAULT_MCP_BATCH_SIZE)))
         )
         self._max_retries = max(
             0, int(os.getenv("TAD_MCP_RETRIES", str(DEFAULT_MCP_RETRIES)))
         )
-        self._client = genai.Client(
-            api_key=GEMINI_API_KEY,
-            http_options=types.HttpOptions(timeout=self._timeout_ms),
+        self._max_workers = max(
+            1, int(os.getenv("TAD_MCP_MAX_WORKERS", str(DEFAULT_MCP_MAX_WORKERS)))
         )
+
+        client_kwargs = {"api_key": GEMINI_API_KEY}
+        if self._timeout_ms is not None:
+            client_kwargs["http_options"] = types.HttpOptions(timeout=self._timeout_ms)
+        self._client = genai.Client(**client_kwargs)
 
     # ── 공개 API ──────────────────────────────────────────────────────────────
 
@@ -115,16 +117,44 @@ class MCPGenerator:
         # LLM 배치 호출 (대용량 입력 시 타임아웃/지연 방지를 위해 chunk 처리)
         llm_results: dict[str, dict] = {}
         chunks = list(self._chunk_tasks(journey.steps))
+        timeout_label = (
+            f"{self._timeout_ms}ms"
+            if self._timeout_ms is not None
+            else "unbounded"
+        )
+        max_workers = max(1, int(getattr(self, "_max_workers", 1)))
         logger.info(
-            "  MCP 배치 분할: 총 %s개 태스크, chunk=%s개, timeout=%sms, retries=%s",
+            "  MCP 배치 분할: 총 %s개 태스크, chunk=%s개, timeout=%s, retries=%s, workers=%s",
             len(journey.steps),
             len(chunks),
-            self._timeout_ms,
+            timeout_label,
             self._max_retries,
+            max_workers,
         )
-        for idx, chunk in enumerate(chunks, start=1):
-            logger.info("  MCP chunk %s/%s 처리 중... (%s개 태스크)", idx, len(chunks), len(chunk))
-            llm_results.update(self._generate_batch(chunk, task_to_agent))
+        if len(chunks) == 1 or max_workers == 1:
+            for idx, chunk in enumerate(chunks, start=1):
+                logger.info("  MCP chunk %s/%s 처리 중... (%s개 태스크)", idx, len(chunks), len(chunk))
+                llm_results.update(self._generate_batch(chunk, task_to_agent))
+        else:
+            logger.info("  MCP chunk 병렬 처리 시작...")
+            with ThreadPoolExecutor(max_workers=min(max_workers, len(chunks))) as executor:
+                future_map = {
+                    executor.submit(self._generate_batch, chunk, task_to_agent): idx
+                    for idx, chunk in enumerate(chunks, start=1)
+                }
+                for future in as_completed(future_map):
+                    idx = future_map[future]
+                    try:
+                        result = future.result()
+                        llm_results.update(result)
+                        logger.info("  MCP chunk %s/%s 완료", idx, len(chunks))
+                    except Exception as e:
+                        logger.warning(
+                            "  MCP chunk %s/%s 처리 실패: %s (fallback 예정)",
+                            idx,
+                            len(chunks),
+                            e,
+                        )
 
         # 결과 조합
         tools: list[MCPToolSchema] = []
@@ -162,17 +192,19 @@ class MCPGenerator:
         for idx, task in enumerate(tasks, start=1):
             agent = task_to_agent.get(task.id)
             agent_name = agent.suggested_name if agent else "Unknown Agent"
-            agent_role = agent.suggested_role if agent else "General Task Processing"
-            
+            # 프롬프트 크기를 줄여 생성 지연/타임아웃 가능성을 낮춤
+            desc = self._shorten(task.description or "미지정", 120)
+            input_data = self._shorten(", ".join(task.input_data) or "미지정", 80)
+            output_data = self._shorten(", ".join(task.output_data) or "미지정", 80)
+
             task_items.append(_TASK_ITEM_TEMPLATE.format(
                 idx=idx,
                 task_id=task.id,
-                name=task.name,
-                description=task.description or "미지정",
-                input_data=", ".join(task.input_data) or "미지정",
-                output_data=", ".join(task.output_data) or "미지정",
+                name=self._shorten(task.name, 60),
+                description=desc,
+                input_data=input_data,
+                output_data=output_data,
                 agent_name=agent_name,
-                agent_role=agent_role,
             ))
 
         prompt = _BATCH_MCP_PROMPT.format(
@@ -345,3 +377,11 @@ class MCPGenerator:
         name = re.sub(r"[^a-z0-9가-힣]", "_", name)
         name = re.sub(r"_+", "_", name).strip("_")
         return f"execute_{name}" if name else "execute_task"
+
+    @staticmethod
+    def _shorten(text: str, limit: int) -> str:
+        """프롬프트 과대화를 막기 위해 텍스트를 제한 길이로 축약"""
+        cleaned = re.sub(r"\s+", " ", text).strip()
+        if len(cleaned) <= limit:
+            return cleaned
+        return cleaned[: max(0, limit - 3)] + "..."
