@@ -99,7 +99,8 @@ TAD-MCP 시스템의 설계 근거가 되는 주요 학술 분야와 핵심 논�
     * *Search-based Path Planning with Homotopy Class Constraints (AAAI)*
     * *Topological Trajectory Prediction with Homotopy Classes*
 
-[Image of homotopy path planning around obstacles]
+<img width="501" height="550" alt="image" src="https://github.com/user-attachments/assets/cdb81e75-3365-4c0f-8b9d-f2a3bc252201" />
+
 
 ---
 
@@ -112,7 +113,8 @@ TAD-MCP 시스템의 설계 근거가 되는 주요 학술 분야와 핵심 논�
     * *Topological Data Analysis in Digital Marketing*
     * *Mapper Algorithm for Customer Segmentation*
 
-[Image of topological data analysis persistent homology visualization]
+<img width="333" height="151" alt="image" src="https://github.com/user-attachments/assets/aeb30f18-6824-49b4-b53a-b197b70f3d20" />
+
 
 ---
 
@@ -125,7 +127,8 @@ TAD-MCP 시스템의 설계 근거가 되는 주요 학술 분야와 핵심 논�
     * *Categorical Systems Theory*
     * *Compositional Game Theory for Agent Systems*
 
-[Image of categorical systems theory compositionality diagram]
+<img width="550" height="307" alt="image" src="https://github.com/user-attachments/assets/708f5365-489f-48b0-8f65-59fad7ba6854" />
+
 ## 시스템 동작 문서
 
 - 상세 동작/구성/장애대응 흐름: `/Users/hahyeonjong/TAD-Agent Mapping/SYSTEM_RUNTIME.md`
