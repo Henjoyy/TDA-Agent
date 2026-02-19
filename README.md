@@ -36,9 +36,7 @@ $$y = (t_{\pi(m)} \circ \cdots \circ t_{\pi(2)} \circ t_{\pi(1)})(x)$$
 
 ---
 
-## Repository
-
-[https://github.com/Henjoyy/TDA-Agent](https://github.com/Henjoyy/TDA-Agent)
+Mathematical Formulation of TAD System1. 사용자 의도 공간과 에이전트 커버리지 (The User Manifold & Agent Covering)사용자의 모든 가능한 발화(Query)와 의도(Intent)를 하나의 거대한 위상 공간(Topological Space) $\mathcal{Q}$라고 정의합니다. 우리가 만든 6개의 Unit Agent는 이 공간을 빈틈없이 덮는 **'열린 피복(Open Cover)'**입니다.$$\mathcal{Q} \subseteq \bigcup_{i \in Agents} U_i$$$\mathcal{Q}$: 사용자 쿼리 매니폴드 (User Query Manifold).$U_i$: $i$번째 Unit Agent가 커버할 수 있는 기능의 영역 (e.g., $U_{Search}, U_{Stats}, ...$).의미: 사용자의 어떤 질문($q \in \mathcal{Q}$)이 들어와도, 최소한 하나의 Agent($U_i$)는 이를 처리할 수 있어야 한다(빈틈 없음).2. 호모토피 라우팅 함수 (Homotopy Routing Function)Master Agent가 사용자의 말을 알아듣고 적절한 Agent에게 넘겨주는 과정을 **'호모토피 클래스 분류(Classification)'**로 정의합니다.사용자의 입력 $x$와 기준이 되는 의도 $x_0$가 서로 호모토픽($x \simeq x_0$)하다면, 같은 Agent로 라우팅됩니다.$$\Phi : \mathcal{Q} \to \{U_{Search}, U_{Stats}, ..., U_{Report}\}$$$$\Phi(x) = U_k \iff [x] = [x_k]$$$\Phi$: Master Agent의 라우팅 함수.$[x]$: 입력 $x$의 호모토피 클래스 (표현은 다르지만 본질적 의도가 같은 쿼리들의 집합).의미: "자료 찾아줘", "데이터 검색해", "정보 좀 줘"는 표현($x$)은 다르지만 호모토피 클래스($[x]$)가 같으므로, 모두 동일한 $U_{Search}$로 매핑된다.3. MCP 툴 실행과 합성 (MCP Tool Composition)선택된 Agent($U_k$)가 내부적으로 여러 MCP Tool을 골라서 순서대로 실행하는 것을 **'함수의 합성(Composition of Functions)'**으로 표현합니다.특정 Agent $U_k$가 가진 MCP Tool의 집합을 $\mathcal{T}_k = {t_1, t_2, ..., t_n}$라고 할 때, 최종 결과 $y$는 다음과 같습니다.$$y = (t_{\pi(m)} \circ \dots \circ t_{\pi(2)} \circ t_{\pi(1)})(x)$$$t \in \mathcal{T}_k$: 개별 MCP Tool (Function).$\circ$: 함수의 합성 (실행 순서).$\pi$: 문맥에 따라 동적으로 결정된 실행 순서(Sequence).의미: Agent는 고정된 코드를 실행하는 게 아니라, 상황에 맞춰 도구($t$)들을 조립($\circ$)하여 문제를 해결한다.4. 시스템의 강건성 (Robustness / Stability Condition)이것이 가장 중요한 **'설득용 수식'**입니다. 입력에 노이즈($\epsilon$)가 섞여도 시스템이 붕괴되지 않음을 증명합니다.입력 $x$에 작은 변형(노이즈, 오타, 불분명한 발화) $\epsilon$이 가해져도, 라우팅 결과는 변하지 않아야 합니다.$$\text{If } \| x - x' \| < \delta, \text{ then } \Phi(x) = \Phi(x')$$$\| x - x' \|$: 사용자 발화의 차이 (거리).$\delta$: Agent가 허용하는 변형의 한계치 (Tolerance).의미: "사용자가 개떡같이 말해도($x'$), 찰떡같이 알아듣고($\Phi(x)$) 원래 의도한 Agent를 호출한다." 이것이 바로 **위상학적 불변성(Topological Invariance)**입니다.
 
 ## 시스템 동작 문서
 
