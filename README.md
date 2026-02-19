@@ -60,6 +60,46 @@ $$
 * **$\| x - x' \|$**: 사용자 발화 간의 거리
 * **$\delta$**: Agent가 허용하는 변형의 임계치 (Tolerance)
 
+## 📚 참조 사례 (Theoretical Background)
+
+TAD-MCP 시스템의 설계 근거가 되는 주요 학술 분야와 핵심 논리입니다.
+
+### 1. 로봇 공학: 호모토피 기반 경로 계획 (Homotopy-based Path Planning)
+사용자 여정을 장애물을 피해가는 경로로 해석하는 모델의 핵심 근거입니다. 로봇이 지형지물(장애물)을 피해 목적지까지 갈 때, "본질적으로 동일한 경로(Homotopy Class)"를 그룹핑하여 계산 효율을 높이는 기법을 차용합니다.
+
+* **핵심 논리**: 수천 가지의 자잘한 이동 경로를 계산하는 대신, 제약 사항(정책/규제)을 기준으로 **"변형 가능한 경로 그룹"**으로 범주화.
+* **적용**: 수많은 사용자 로그를 분석하는 대신, 정책을 위반하지 않는 **성공적인 여정 패턴(Unit Agent)** 몇 가지로 압축 설계.
+* **참조 키워드**:
+    * *Search-based Path Planning with Homotopy Class Constraints (AAAI)*
+    * *Topological Trajectory Prediction with Homotopy Classes*
+
+[Image of homotopy path planning around obstacles]
+
+---
+
+### 2. 데이터 분석: 위상수학적 데이터 분석 (TDA - Topological Data Analysis)
+빅데이터의 "모양(Shape)"을 분석하여 본질적인 구조를 파악하는 기법입니다. 데이터 클라우드 내의 노이즈를 제거하고 유의미한 연결성을 식별합니다.
+
+* **핵심 논리**: **지속 호모올로지(Persistent Homology)**를 통해 노이즈에 강건한(Robust) 본질적 연결 구조만 추출.
+* **적용**: 사용자들의 비정형 발화(Noise) 속에서 그들이 진짜 원하는 **핵심 의도(Intent)의 응집체**를 식별하여 Unit Agent의 경계를 정의.
+* **참조 키워드**:
+    * *Topological Data Analysis in Digital Marketing*
+    * *Mapper Algorithm for Customer Segmentation*
+
+[Image of topological data analysis persistent homology visualization]
+
+---
+
+### 3. 시스템 이론: 응용 범주론 (Applied Category Theory)
+복잡한 시스템을 '블록 조립'하듯이 설계하고, 각 컴포넌트 간의 인터페이스 정합성을 수학적으로 검증하는 방법론입니다.
+
+* **핵심 논리**: **합성성(Compositionality)** - 작은 시스템(Unit Agent)을 결합하여 큰 시스템(Service)을 구성할 때 연결 부위의 논리적 결함을 보장.
+* **적용**: 식별된 Unit Agent들을 연결(Orchestration)할 때, 데이터 단절이나 논리적 불일치(Mismatch)가 없는 **설계 무결성** 확보.
+* **참조 키워드**:
+    * *Categorical Systems Theory*
+    * *Compositional Game Theory for Agent Systems*
+
+[Image of categorical systems theory compositionality diagram]
 ## 시스템 동작 문서
 
 - 상세 동작/구성/장애대응 흐름: `/Users/hahyeonjong/TAD-Agent Mapping/SYSTEM_RUNTIME.md`
