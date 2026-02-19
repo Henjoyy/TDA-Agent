@@ -6,10 +6,10 @@
 
 ---
 
-#### Mathematical Formulation of TAD System
+### Mathematical Formulation of TAD System
 
-### 1. 사용자 의도 공간과 에이전트 커버리지 (The User Manifold & Agent Covering)
-사용자의 모든 가능한 발화(Query)와 의도(Intent)를 하나의 거대한 위상 공간(Topological Space) $\mathcal{Q}$라고 정의합니다. 우리가 만든 6개의 Unit Agent는 이 공간을 빈틈없이 덮는 **'열린 피복(Open Cover)'**입니다.
+## 1. 사용자 의도 공간과 에이전트 커버리지 (The User Manifold & Agent Covering)
+사용자의 모든 가능한 발화(Query)와 의도(Intent)를 하나의 거대한 위상 공간(Topological Space) $\mathcal{Q}$라고 정의합니다. Unit Agent는 이 공간을 빈틈없이 덮는 '열린 피복(Open Cover)'입니다.
 
 $$
 \mathcal{Q} \subseteq \bigcup_{i \in \text{Agents}} U_i
@@ -51,7 +51,7 @@ $$
 ---
 
 ### 4. 시스템의 강건성 (Robustness / Stability Condition)
-입력 $x$에 작은 변형(노이즈, 오타 등) $\epsilon$이 가해져도, 라우팅 결과는 변하지 않아야 함을 증명하는 **위상학적 불변성(Topological Invariance)** 수식입니다.
+입력 $x$에 작은 변형(노이즈, 오타 등) $\epsilon$이 가해져도, 라우팅 결과는 변하지 않아야 함을 증명하는 위상학적 불변성(Topological Invariance) 수식입니다.
 
 $$
 \text{If } \| x - x' \| < \delta, \text{ then } \Phi(x) = \Phi(x')
