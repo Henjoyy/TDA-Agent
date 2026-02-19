@@ -6,37 +6,7 @@
 
 ---
 
-## 수학적 정식화
-
-### 1. 사용자 쿼리 매니폴드 & 에이전트 피복 (Q ⊆ ∪ Uᵢ)
-
-모든 사용자 쿼리가 속하는 위상 공간 Q를 정의하고, Unit Agent들이 이를 빈틈없이 덮는지 검증합니다.
-
-$$\mathcal{Q} \subseteq \bigcup_{i \in Agents} U_i$$
-
-### 2. 호모토피 라우팅 함수 Φ
-
-Master Agent가 쿼리를 의미적으로 분류하여 적절한 Unit Agent로 라우팅합니다.
-
-$$\Phi : \mathcal{Q} \to \{U_{Search}, U_{Stats}, \ldots, U_{Report}\} \qquad \Phi(x) = U_k \iff [x] = [x_k]$$
-
-"자료 찾아줘", "데이터 검색해", "정보 좀 줘" → 호모토피 동치류 [x]가 같으므로 모두 동일한 Agent로 라우팅
-
-### 2-1. Soft Routing (확률 라우팅)
-
-하드 라우팅과 함께 각 Agent에 대한 확률 분포를 계산합니다.
-
-$$P(U_k \mid x) = \frac{\exp(\text{sim}(x,c_k)/\tau)}{\sum_j \exp(\text{sim}(x,c_j)/\tau)}$$
-
-### 3. MCP Tool 합성 (함수 합성)
-
-Agent가 상황에 맞게 MCP Tool을 동적으로 조립하여 문제를 해결합니다.
-
-$$y = (t_{\pi(m)} \circ \cdots \circ t_{\pi(2)} \circ t_{\pi(1)})(x)$$
-
----
-
-## Mathematical Formulation of TAD System
+#### Mathematical Formulation of TAD System
 
 ### 1. 사용자 의도 공간과 에이전트 커버리지 (The User Manifold & Agent Covering)
 사용자의 모든 가능한 발화(Query)와 의도(Intent)를 하나의 거대한 위상 공간(Topological Space) $\mathcal{Q}$라고 정의합니다. 우리가 만든 6개의 Unit Agent는 이 공간을 빈틈없이 덮는 **'열린 피복(Open Cover)'**입니다.
